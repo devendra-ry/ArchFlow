@@ -200,6 +200,30 @@ def test_llm_extraction_runs_chunks_in_parallel_and_merges(monkeypatch):
     assert out["stakeholders"] == ["Logistics team"]
 
 
+def test_progress_names_the_library_pages_and_model_and_cancel_skips_parts(monkeypatch):
+    steps = []
+    doc = intake.read_document("spec.pdf", PDF, steps.append)
+    assert steps[0]["stage"] == "read" and "with pypdf " in steps[0]["message"]
+    assert {"done": 2, "total": 2}.items() <= steps[-2].items() and "Read " in steps[-1]["message"]
+
+    monkeypatch.setattr(llm, "available", lambda *a, **k: True)
+    monkeypatch.setattr(intake, "extract_model", lambda *a, **k: "gemini/test-model")
+    monkeypatch.setattr(llm, "complete_json", lambda *a, **k: {"requirements": []})
+    steps.clear()
+    out = intake.propose(doc, ProjectState(), "org-x", progress=steps.append)
+    assert [s["stage"] for s in steps][:2] == ["split", "extract"] and steps[-1]["stage"] == "compare"
+    assert "gemini/test-model" in steps[1]["message"] and steps[-2]["done"] == steps[-2]["total"]
+    assert out["reader"]["library"].startswith("pypdf ") and out["reader"]["model"] == "gemini/test-model"
+
+    calls = []
+    monkeypatch.setattr(llm, "complete_json", lambda *a, **k: calls.append(1) or {"requirements": []})
+    with pytest.raises(intake.ImportCancelled):
+        intake.propose(doc, ProjectState(), "org-x", cancelled=lambda: True)
+    with pytest.raises(intake.ImportCancelled):
+        intake.read_document("spec.pdf", PDF, cancelled=lambda: True)
+    assert calls == []  # nothing was sent to the model
+
+
 def test_intake_eval_suite_scores_a_case(monkeypatch):
     from archflow.evals import runner, suites
 
@@ -264,6 +288,32 @@ def test_upload_accept_with_provenance_memory_and_activity(client):
     assert ("Owner", "import portal.md: proposed 2 requirement(s), 1 flagged (offline)") in lines
     assert ("Owner", "import portal.md: accepted 1 requirement(s), saved 1 note(s) to memory") in lines
     assert any(actor == "Owner (import portal.md)" for actor, _ in lines)
+
+
+def sse(text: str) -> list[tuple[str, dict]]:
+    import json
+    return [(b.split("\n")[0][len("event: "):], json.loads(b.split("\n")[1][len("data: "):]))
+            for b in text.strip().split("\n\n")]
+
+
+def test_upload_streams_progress_then_the_proposal(client):
+    pid = project(client)
+    url = f"/api/projects/{pid}/requirements/import"
+    r = client.post(url, params={"filename": "portal.md"}, content=MD, headers={"Accept": "text/event-stream"})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/event-stream")
+    events = sse(r.text)
+    stages = [e["stage"] for k, e in events if k == "progress"]
+    assert stages[0] == "upload" and {"read", "split", "extract", "compare"} <= set(stages)
+    assert any("Markdown reader" in e["message"] for k, e in events if k == "progress")
+    assert any("offline rules" in e["message"] for k, e in events if k == "progress")
+    kind, result = events[-1]
+    assert kind == "done" and len(result["requirements"]) == 2 and result["reader"]["model"] == ""
+    lines = [s for a in client.get(f"/api/projects/{pid}/activity").json() for s in a["summary"]]
+    assert "import portal.md: proposed 2 requirement(s) (offline)" in lines
+
+    r = client.post(url, params={"filename": "empty.md"}, content=b"   ", headers={"Accept": "text/event-stream"})
+    kind, err = sse(r.text)[-1]
+    assert kind == "error" and err["status"] == 422 and "No text" in err["message"]
 
 
 def test_upload_rejects_large_and_unsupported_files_and_viewers(app, client, monkeypatch):

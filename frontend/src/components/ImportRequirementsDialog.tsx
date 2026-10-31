@@ -1,7 +1,7 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
-import type { IntakeMatch, IntakeNote, IntakeProposal, IntakeResult, MemoryCategory } from "../types";
+import type { IntakeMatch, IntakeNote, IntakeProposal, IntakeResult, IntakeStep, MemoryCategory } from "../types";
 
 interface Props {
   pid: string;
@@ -23,6 +23,53 @@ export function sourceLabel(src: Record<string, string> | undefined): string {
   return [src.ref, src.section && `§ ${src.section}`, src.page && `p. ${src.page}`].filter(Boolean).join(" · ");
 }
 
+const STAGES: { key: IntakeStep["stage"]; label: string }[] = [
+  { key: "upload", label: "Upload" },
+  { key: "read", label: "Read the file" },
+  { key: "split", label: "Split into parts" },
+  { key: "extract", label: "Find requirements" },
+  { key: "compare", label: "Check duplicates and conflicts" },
+];
+
+const size = (bytes: number) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+
+/** What the import is doing right now: each stage with its latest message, the current one spinning. */
+function ImportProgress({ file, steps, seconds, onCancel }: {
+  file: File; steps: Partial<Record<IntakeStep["stage"], IntakeStep>>; seconds: number; onCancel: () => void;
+}) {
+  const reached = STAGES.reduce((at, s, i) => (steps[s.key] ? i : at), 0);
+  return (
+    <div className="intake-progress" role="status" aria-live="polite">
+      <div className="row between">
+        <span className="small"><span className="spinner" aria-hidden /> Reading <b>{file.name}</b> · {size(file.size)}</span>
+        <span className="small muted">{seconds}s</span>
+      </div>
+      <ol className="intake-steps">
+        {STAGES.map((s, i) => {
+          const step = steps[s.key];
+          const state = i < reached ? "done" : i === reached ? "now" : "todo";
+          const message = step?.message ?? (s.key === "upload" ? `Sending ${size(file.size)} to the server…` : "");
+          return (
+            <li key={s.key} className={state}>
+              <span className="intake-step-icon" aria-hidden>{state === "done" ? "✓" : state === "now" ? <span className="spinner" /> : "○"}</span>
+              <div>
+                <div className="small">{s.label}</div>
+                {message && <div className="small muted">{message}</div>}
+                {state === "now" && step?.total ? (
+                  <div className="meter-bar" title={`${step.done} of ${step.total}`}>
+                    <div className="meter-fill good" style={{ width: `${Math.round(((step.done ?? 0) / step.total) * 100)}%` }} />
+                  </div>
+                ) : null}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <div className="row end"><button onClick={onCancel}>Cancel</button></div>
+    </div>
+  );
+}
+
 const matchTitle = (m: IntakeMatch) =>
   `${m.id} ${m.title} (${m.where === "project" ? "in the project" : "earlier in this document"})` +
   `${m.reason ? ` — ${m.reason}` : ""}${sourceLabel(m.source) ? `\nSource: ${sourceLabel(m.source)}` : ""}` +
@@ -38,14 +85,36 @@ export function ImportRequirementsDialog({ pid, branch, onDone, onClose }: Props
   const [items, setItems] = useState<IntakeProposal[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [notes, setNotes] = useState<Set<string>>(new Set());
+  const [reading, setReading] = useState<File | null>(null);
+  const [steps, setSteps] = useState<Partial<Record<IntakeStep["stage"], IntakeStep>>>({});
+  const [seconds, setSeconds] = useState(0);
+  const [cancelled, setCancelled] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => abortRef.current?.abort(), []); // closing the dialog cancels a running import
+  useEffect(() => {
+    if (busy !== "read") return;
+    const started = Date.now();
+    const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1000);
+    return () => window.clearInterval(timer);
+  }, [busy]);
 
   const read = async (file: File) => {
-    setError(""); setBusy("read");
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    setError(""); setCancelled(false); setSteps({}); setSeconds(0); setReading(file); setBusy("read");
     try {
-      const r = await api.importRequirements(pid, branch, file);
+      const r = await api.importRequirements(pid, branch, file, (s) => setSteps((x) => ({ ...x, [s.stage]: s })), ctrl.signal);
       setResult(r); setItems(r.requirements); setNotes(new Set());
-    } catch (e) { setError((e as Error).message); } finally { setBusy(""); }
+    } catch (e) {
+      if ((e as Error).name === "AbortError") setCancelled(true); else setError((e as Error).message);
+    } finally {
+      if (abortRef.current === ctrl) abortRef.current = null;
+      if (fileRef.current) fileRef.current.value = ""; // the same file can be picked again
+      setReading(null); setBusy("");
+    }
   };
+  const cancel = () => abortRef.current?.abort();
   const patch = (id: string, changes: Partial<IntakeProposal>) =>
     setItems((xs) => xs.map((x) => (x.id === id ? { ...x, ...changes } : x)));
   const chosen = items.filter((x) => x.selected && x.title.trim());
@@ -78,15 +147,18 @@ export function ImportRequirementsDialog({ pid, branch, onDone, onClose }: Props
             <p className="small muted">Upload a PRD, RFP or spec (PDF, Word .docx, Markdown or text). ArchFlow proposes functional and
               non-functional requirements with the section and page they came from; nothing is added until you accept.</p>
             <input ref={fileRef} type="file" accept=".pdf,.docx,.md,.markdown,.txt,.text" disabled={busy === "read"} aria-label="Document"
-              onChange={(e) => { const f = e.target.files?.[0]; if (f) read(f); }} />
-            {busy === "read" && <p className="small muted">Reading the document…</p>}
+              hidden={busy === "read"} onChange={(e) => { const f = e.target.files?.[0]; if (f) read(f); }} />
+            {busy === "read" && reading && <ImportProgress file={reading} steps={steps} seconds={seconds} onCancel={cancel} />}
+            {cancelled && <p className="small muted">Import cancelled. Nothing was added; choose a file to start again.</p>}
           </div>
         )}
         {result && (
           <>
             <p className="small muted">
               <b>{result.file.name}</b>{result.file.pages ? ` · ${result.file.pages} page(s)` : ""} · {result.file.sections} section(s) ·{" "}
-              {result.engine === "offline" ? "read with the offline rules (no AI configured)" : result.engine === "mixed" ? "read by the AI (some parts offline)" : "read by the AI"}
+              {result.reader && <>read with {result.reader.library} · </>}
+              {result.engine === "offline" ? "requirements found by the offline rules (no AI configured)"
+                : `requirements found by ${result.reader?.model || "the AI"}${result.engine === "mixed" ? " (some parts by the offline rules)" : ""}`}
               {result.stakeholders.length > 0 && <> · stakeholders: {result.stakeholders.join(", ")}</>}
             </p>
             {result.notes.map((n, i) => <p key={i} className="small warn">{n}</p>)}

@@ -1,7 +1,7 @@
 import type { Activity, Analysis, ArchOption, Branch, ChatCard, ChatTurn, ApiToken, Catalog, Diff, Op, Org, Project, ProjectState, Version } from "./types";
 import type { AppNotification, Comment, CommentTarget, Decision, Evaluation } from "./types";
 import type { AIConfig, AIGroup, AIProvider, AISettings, AITestResult, Invite, InviteInfo, Me, Member, Role } from "./types";
-import type { ComponentViews, IntakeNote, IntakeResult, LldResult, RequirementRevision, MergePreview, MergeResolution, MergeResult, MergeSuggestion, Diagram, DiagramInfo } from "./types";
+import type { ComponentViews, IntakeNote, IntakeResult, IntakeStep, LldResult, RequirementRevision, MergePreview, MergeResolution, MergeResult, MergeSuggestion, Diagram, DiagramInfo } from "./types";
 import type { CodeGraphRecord, CodeJob, CodeOverview, DriftResult, ImpactResult, ReconstructResult } from "./types";
 import type { Conversation, ConversationKind, ConversationMessage, MemoryCategory, MemoryItem } from "./types";
 import type { OpenSpecChange, OpenSpecJob, OpenSpecOverview } from "./types";
@@ -77,6 +77,16 @@ async function stream(path: string, body: unknown, params: Record<string, string
     headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  for await (const { event, data } of sseEvents(res)) {
+    if (event === "start") handlers.onStart?.(data.user_message);
+    else if (event === "delta") handlers.onDelta(data.text);
+    else if (event === "done") return data.message as ConversationMessage;
+  }
+  throw new Error("The answer stream ended early. Reload the conversation to see the saved answer.");
+}
+
+/** The server-sent events of a response; throws ApiError when the request itself failed. */
+async function* sseEvents(res: Response): AsyncGenerator<{ event: string; data: any }> {
   if (!res.ok || !res.body) {
     const data = await res.json().catch(() => null);
     if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
@@ -86,7 +96,7 @@ async function stream(path: string, body: unknown, params: Record<string, string
   let buf = "";
   for (;;) {
     const { value, done } = await reader.read();
-    if (done) break;
+    if (done) return;
     buf += value;
     let cut: number;
     while ((cut = buf.indexOf("\n\n")) >= 0) {
@@ -94,14 +104,28 @@ async function stream(path: string, body: unknown, params: Record<string, string
       buf = buf.slice(cut + 2);
       const event = /^event: (.*)$/m.exec(block)?.[1];
       const raw = /^data: (.*)$/m.exec(block)?.[1];
-      if (!event || raw === undefined) continue;
-      const data = JSON.parse(raw);
-      if (event === "start") handlers.onStart?.(data.user_message);
-      else if (event === "delta") handlers.onDelta(data.text);
-      else if (event === "done") return data.message as ConversationMessage;
+      if (event && raw !== undefined) yield { event, data: JSON.parse(raw) };
     }
   }
-  throw new Error("The answer stream ended early. Reload the conversation to see the saved answer.");
+}
+
+/**
+ * Upload a document and follow the server's progress events until the proposal arrives.
+ * Aborting closes the connection, which cancels the import on the server.
+ */
+async function importStream(pid: string, branch: string, file: File, onProgress: (step: IntakeStep) => void,
+  signal?: AbortSignal): Promise<IntakeResult> {
+  const res = await fetch(`/api/projects/${pid}/requirements/import?${new URLSearchParams({ filename: file.name, branch })}`, {
+    method: "POST", credentials: "include", signal, body: file,
+    headers: { "Content-Type": "application/octet-stream", Accept: "text/event-stream" },
+  });
+  for await (const { event, data } of sseEvents(res)) {
+    if (event === "progress") onProgress(data as IntakeStep);
+    else if (event === "done") return data as IntakeResult;
+    else if (event === "error") throw new ApiError(data.status, { detail: data.message });
+    else if (event === "cancelled") throw new DOMException("The import was cancelled.", "AbortError");
+  }
+  throw new Error("The connection closed before the document was read. Try again.");
 }
 
 export const api = {
@@ -319,9 +343,8 @@ export const api = {
       Object.fromEntries(Object.entries({ repo_url, commit_sha }).filter(([, v]) => v)) as Record<string, string>),
   codeReconstruct: (pid: string, id: string) =>
     call<ReconstructResult>("POST", `/projects/${pid}/codegraph/${id}/reconstruct`, { refine: true }),
-  /** Read a document into proposed requirements (nothing is applied yet). */
-  importRequirements: (pid: string, branch: string, file: File) =>
-    upload<IntakeResult>(`/projects/${pid}/requirements/import`, file, { filename: file.name, branch }, "application/octet-stream"),
+  /** Read a document into proposed requirements (nothing is applied yet), reporting each step; abort to cancel. */
+  importRequirements: importStream,
   /** Add the accepted (possibly edited) proposals with their source; optionally save notes to project memory. */
   acceptImport: (pid: string, branch: string, file: IntakeResult["file"], requirements: Record<string, unknown>[],
     memory: (IntakeNote & { category: MemoryCategory })[]) =>

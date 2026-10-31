@@ -58,13 +58,37 @@ test("requirements: import from a Markdown document, review and accept", async (
       "## Quality", "", "- Tracking pages must load in under 500 ms at the 95th percentile.", "",
     ].join("\n")),
   });
-  await expect(dialog.getByText(/read with the offline rules|read by the AI/)).toBeVisible();
+  await expect(dialog.getByText(/read with ArchFlow's Markdown reader · requirements found by the offline rules/)).toBeVisible();
   const add = dialog.getByRole("button", { name: /^Add \d+ requirements?$/ });
   await expect(add).toBeEnabled();
   await add.click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".req-row").filter({ hasText: /track a parcel/i })).toBeVisible();
   await expect(page.locator(".req-list")).toContainText(/from prd\.md/);
+});
+
+test("requirements: a document import shows its steps and can be cancelled", async ({ page }) => {
+  await openNewProject(page, `Import cancel ${Date.now()}`);
+  await tab(page, "Requirements");
+  // Hold the upload so the progress panel stays up long enough to cancel.
+  let release = () => {};
+  await page.route("**/requirements/import?*", async (route) => {
+    await new Promise<void>((r) => { release = r; });
+    await route.continue().catch(() => {});
+  });
+  await page.getByRole("button", { name: "⇪ Import" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import requirements from a document" });
+  await dialog.getByLabel("Document").setInputFiles({
+    name: "slow.md", mimeType: "text/markdown", buffer: Buffer.from("# Spec\n\n- The system shall export invoices.\n"),
+  });
+  const progress = dialog.getByRole("status");
+  await expect(progress).toContainText("Reading slow.md");
+  await expect(progress).toContainText("Find requirements");
+  await progress.getByRole("button", { name: "Cancel" }).click();
+  release();
+  await expect(dialog.getByText(/Import cancelled/)).toBeVisible();
+  await expect(progress).toHaveCount(0);
+  await expect(dialog.getByLabel("Document")).toBeEnabled();
 });
 
 test("approvals: request a review on a saved version and approve it", async ({ page }) => {

@@ -1095,6 +1095,16 @@ button.danger.ghost { color: var(--danger); }
 .intake-badge.conflict { background: color-mix(in srgb, var(--danger) 18%, var(--panel)); color: var(--danger); }
 .intake-notes { border-top: 1px solid var(--border); padding-top: 6px; display: flex; flex-direction: column; gap: 6px; }
 .intake-notes h4 { margin: 0; }
+.intake-progress { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--panel-2); }
+.intake-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.intake-steps li { display: flex; gap: 8px; align-items: flex-start; }
+.intake-steps li > div { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; overflow-wrap: anywhere; }
+.intake-steps li.todo { opacity: .5; }
+.intake-steps li.done .intake-step-icon { color: var(--ok); }
+.intake-step-icon { width: 16px; flex: none; text-align: center; line-height: 18px; }
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid color-mix(in srgb, var(--primary) 25%, transparent); border-top-color: var(--primary); border-radius: 50%; vertical-align: -2px; animation: spin .8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
 
 
 /* ---- Jira push ---- */

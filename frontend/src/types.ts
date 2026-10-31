@@ -477,9 +477,15 @@ export interface IntakeProposal {
   source: Record<string, string>; duplicates: IntakeMatch[]; conflicts: IntakeMatch[]; selected: boolean;
 }
 export interface IntakeNote { text: string; section?: string; page?: number }
+/** One progress event while a document is imported; ``done``/``total`` count pages or parts. */
+export interface IntakeStep {
+  stage: "upload" | "read" | "split" | "extract" | "compare"; message: string; done?: number; total?: number;
+}
 export interface IntakeResult {
   engine: "llm" | "offline" | "mixed"; notes: string[];
   file: { name: string; type: string; pages: number | null; sections: number; chars: number; chunks: number };
+  /** The library that read the file and the model that extracted requirements ("" when the offline rules did). */
+  reader?: { library: string; model: string };
   requirements: IntakeProposal[]; assumptions: IntakeNote[]; constraints: IntakeNote[]; open_questions: IntakeNote[];
   stakeholders: string[];
 }
