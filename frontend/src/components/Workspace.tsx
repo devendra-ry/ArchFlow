@@ -24,8 +24,11 @@ import { AISettingsDialog } from "./OrgDialogs";
 import { CommandBar, type ChatDock, type ChatMode } from "./CommandBar";
 import { CommentsPanel } from "./CommentsPanel";
 import { NotificationBell } from "./NotificationBell";
-import type { AppNotification, Comment, JiraLinks, Member } from "../types";
+import type { AppNotification, Comment, ExternalLinks, JiraLinks, Member } from "../types";
 import { JiraDialog } from "./JiraDialog";
+import { KnowledgeDialog } from "./KnowledgeDialog";
+import { CostDialog } from "./CostDialog";
+import { ConfluenceDialog, GitHubDialog } from "./IntegrationsDialog";
 import { ConnectDialog } from "./ConnectDialog";
 import { ExportDialog } from "./ExportDialog";
 import { DiagramsDialog } from "./DiagramsDialog";
@@ -138,6 +141,13 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const [exportOpen, setExportOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [jiraOpen, setJiraOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [kbVersion, setKbVersion] = useState(0);
+  const [costsOpen, setCostsOpen] = useState(false);
+  const [githubOpen, setGithubOpen] = useState(false);
+  const [confluenceOpen, setConfluenceOpen] = useState(false);
+  const [github, setGithub] = useState<ExternalLinks | null>(null);
+  const [confluence, setConfluence] = useState<ExternalLinks | null>(null);
   const [jira, setJira] = useState<JiraLinks | null>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -286,6 +296,11 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const loadJira = useCallback(() => { api.jiraLinks(pid).then(setJira).catch(() => setJira(null)); }, [pid]);
   useEffect(loadJira, [loadJira]);
   const jiraByReq = Object.fromEntries((jira?.links ?? []).filter((l) => l.object_kind === "requirement").map((l) => [l.object_id, l]));
+  // GitHub issues and the Confluence page published for this project (shown when the org connected them).
+  const loadGithub = useCallback(() => { api.githubLinks(pid).then(setGithub).catch(() => setGithub(null)); }, [pid]);
+  useEffect(loadGithub, [loadGithub]);
+  useEffect(() => { api.confluenceLinks(pid).then(setConfluence).catch(() => setConfluence(null)); }, [pid]);
+  const githubByReq = Object.fromEntries((github?.links ?? []).map((l) => [l.object_id, l]));
   // People you can @mention: refreshed when comments open and when someone new comes online (they may have just joined).
   const peerNames = live.peers.map((p) => p.name).sort().join("|");
   useEffect(() => {
@@ -782,6 +797,18 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
                 <b>⟨/⟩ Code analysis</b><span className="muted tiny">Reconstruct a repository, check drift and change impact</span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setDiagramsOpen(true); }}>
                 <b>◫ Diagrams</b><span className="muted tiny">C4, sequence, ER, deployment and data flow as Mermaid / PlantUML</span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setKnowledgeOpen(true); }}>
+                <b>❖ Knowledge base</b><span className="muted tiny">Ask and search the project documents and meetings, with citations</span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setCostsOpen(true); }}>
+                <b>$ Cost estimate</b><span className="muted tiny">Monthly cost of this architecture, line by line, and ways to save</span></button>
+              {confluence?.connected && can(role, "edit") && (
+                <button role="menuitem" onClick={() => { setToolsOpen(false); setConfluenceOpen(true); }}>
+                  <b>⇪ Publish to Confluence</b><span className="muted tiny">The architecture spec as a page in {confluence.space_key}</span></button>
+              )}
+              {github?.connected && can(role, "edit") && (
+                <button role="menuitem" onClick={() => { setToolsOpen(false); setGithubOpen(true); }}>
+                  <b>⎇ Push to GitHub</b><span className="muted tiny">Requirements as issues in {github.repo}</span></button>
+              )}
               <button role="menuitem" onClick={() => { setToolsOpen(false); setConnectOpen(true); }}>
                 <b>⌘ Connect AI agents</b><span className="muted tiny">Claude, Codex and others over MCP</span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); toggleCanvasFull(); }}>
@@ -876,7 +903,9 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           <RequirementsPanel state={state} issues={analysis?.requirement_issues ?? []} traced={traced} onTrace={setTraced} readOnly={readOnly}
             send={send} onPrompt={(rid) => setPromptFor({ nodeIds: [], requirementIds: [rid] })}
             pid={pid} branch={branch} isAdmin={can(role, "admin")} toast={toast} onMemoryChanged={loadMemory}
-            jira={jiraByReq} onJira={jira?.connected && can(role, "edit") ? () => setJiraOpen(true) : undefined} />
+            jira={jiraByReq} onJira={jira?.connected && can(role, "edit") ? () => setJiraOpen(true) : undefined}
+            github={githubByReq} onGitHub={github?.connected && can(role, "edit") ? () => setGithubOpen(true) : undefined}
+            onMeetingImported={(c) => { if (c.knowledge) setKbVersion((v) => v + 1); }} />
         )}
         {tab === "issues" && (
           <IssuesPanel pid={pid} branch={branch} analysis={analysis} aiAvailable={!!ai?.available} onFocus={focusIssue}
@@ -1000,6 +1029,19 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       {jiraOpen && jira && (
         <JiraDialog pid={pid} branch={branch} defaultKey={jira.project_key} aiAvailable={!!ai?.available}
           onClose={() => setJiraOpen(false)} onChanged={loadJira} />
+      )}
+      {knowledgeOpen && (
+        <KnowledgeDialog pid={pid} canEdit={can(role, "edit")} version={kbVersion} onClose={() => setKnowledgeOpen(false)} />
+      )}
+      {costsOpen && (
+        <CostDialog pid={pid} branch={branch} aiAvailable={!!ai?.available} rev={state?.rev ?? 0} onClose={() => setCostsOpen(false)}
+          onSelect={(id) => { setCostsOpen(false); focusNodes([id]); }} />
+      )}
+      {githubOpen && github && (
+        <GitHubDialog pid={pid} branch={branch} repo={github.repo ?? ""} onClose={() => setGithubOpen(false)} onChanged={loadGithub} />
+      )}
+      {confluenceOpen && confluence && (
+        <ConfluenceDialog pid={pid} branch={branch} space={confluence.space_key ?? ""} onClose={() => setConfluenceOpen(false)} />
       )}
       {connectOpen && project && (
         <ConnectDialog orgId={project.org_id ?? "org-default"} canManage={can(role, "admin")} onClose={() => setConnectOpen(false)} />

@@ -148,6 +148,24 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 - **Soft delete** — deleting a requirement moves it to the **Deleted** filter with its component links kept, so **Restore** brings it back intact; deleted requirements are left out of health, traceability, AI context, coding briefs, OpenSpec changes and MCP tools. Admins can **Delete permanently** (the history is kept)
 - **Stale links** — when a requirement changes after a component linked to it last changed, the component gets a ⟳ badge on the canvas and the Inspector lists what changed; **Mark reviewed** confirms the component still fits. Staleness is computed from revision numbers (`stale_links` in the analysis), nothing extra is stored
 - **Import from a document** — upload a PRD, RFP or spec (PDF, Word `.docx`, Markdown, text; up to `ARCHFLOW_INTAKE_MAX_MB`, default 20 MB). The `intake.extract` agent reads long documents in parallel chunks and proposes FRs and NFRs with the section and page they came from, plus assumptions, constraints, open questions and stakeholders; likely duplicates and conflicts with existing requirements (or elsewhere in the document) are flagged with both sources. Review, edit and tick what to keep — nothing is added until you accept. Accepted requirements keep their provenance (file, section, page, import time) and assumptions/constraints/questions can be saved to project memory. Without an AI model, "shall / must / should" sentences and bullets under requirement headings are read instead. Document text is treated as untrusted input, never as instructions
+- **Import from a meeting** (🎙 Meeting) — upload a Teams / Zoom / Google Meet transcript (`.vtt` with voice tags, `.srt`, text or Markdown with "Speaker: text" or "[00:12:05] Speaker: text", Word `.docx`) or a recording (`.mp3`, `.m4a`, `.wav`, `.webm`, `.mp4`; transcribed by the org's speech-to-text model, OpenAI Whisper by default). The `meetings.extract` agent reads the conversation in parallel windows and proposes the requirements people asked for (who said it, when, and whether the room **agreed**, only **proposed** it or **disputed** it), the **decisions** taken (rationale and the alternatives discussed), **action items** (owner, due date), open questions, assumptions, constraints, participants and a summary. Duplicates and conflicts with existing requirements are flagged. Accepting adds the requirements with provenance (`source.type = meeting`, speaker, timestamp), the decisions as **proposed ADRs**, and action items and questions as project memory; the transcript can also go into the knowledge base. Without a model, rules read requirement sentences, "we decided / let's go with", "I'll / can you … by Friday" and real questions (small talk is skipped)
+
+### 📚 Knowledge Base (RAG)
+
+- **Tools → Knowledge base** — upload the documents the team decides from (PRDs, RFPs, policies, runbooks, contracts, meeting transcripts). They are split into passages at section and paragraph boundaries (with a little overlap) and kept with their section, page and, for transcripts, the timestamp
+- **Hybrid retrieval** — BM25 keyword ranking always (offline too: error codes and product names match exactly) plus vector similarity when the org has an embedding model (Gemini `gemini-embedding-001` or OpenAI `text-embedding-3-small`, or `ARCHFLOW_MODEL_EMBEDDING`), merged with reciprocal-rank fusion. Documents added before a model was available are re-indexed with one click
+- **Cited answers** — the `kb.answer` agent answers only from the retrieved passages, cites every claim ([K1], [K2]…) with a verbatim quote, document, section and page, says when the documents do not answer, flags passages that disagree, and suggests follow-up questions drawn from the passages
+- **The assistant uses it** — every Ask question also gets the best matching passages (`assistant.ask` v4), so answers about the project can quote its documents
+- Passages are untrusted input (wrapped and never followed as instructions); personal data and secrets are masked before passages are embedded or sent to a model. Viewers search and ask; developers and up add and remove documents. REST: `GET|POST /api/projects/{id}/knowledge`, `POST …/knowledge/search | ask | reindex`, `DELETE …/knowledge/{doc}`
+
+### 💲 Cost Estimation
+
+- **Tools → Cost estimate** — a monthly cost range for the architecture on the canvas, one line per component: priced from its catalog kind (containers, Kubernetes, functions, VMs, relational / document / vector / search databases, warehouses, caches, queues, streams, object and file storage, CDN, load balancers, API gateways, identity, secrets, WAF, LLMs, ML endpoints, monitoring, workflows, email, SMS) and its vendor (AWS, Azure, Google Cloud, self-managed open source, SaaS), with the formula behind every number and a low–high range (usage-priced lines are less certain than fixed instances)
+- **Assumptions from the project** — monthly active users, peak requests per second, stored data, data transfer, availability, LLM calls and tokens, emails and messages per user are read from the requirements and memory ("5,000 concurrent users", "300 requests per second", "2 TB of documents", "99.95%"); every value says where it came from and can be changed in the dialog. 99.95% or more doubles stateful tiers (multi-AZ). Components can pin their own numbers with the properties `monthly_cost`, `instances`, `vcpu`, `storage_gb`
+- **LLM costs** use the model's token prices (LiteLLM's price map); a staging environment (30% of production by default), the region and data transfer out are included
+- **Budget check** — a cost requirement ("must cost less than $2,000 per month", "6k USD per year") is compared with the range: within budget, at risk or over
+- **Ways to save** — the `costs.optimize` agent writes recommendations grounded in the line items (components named, saving capped at what they cost, trade-offs against the NFRs); without a model, rules suggest the standard ones (commitments for steady instances, serverless for low traffic, a CDN for heavy egress, model routing for LLM-heavy designs). **CSV** download for spreadsheets
+- Prices are indicative on-demand list prices built into `costs.PRICES` (`ARCHFLOW_COST_PRICES` overrides any of them) — for comparing options and finding the big lines, not a quote. REST: `POST /api/projects/{id}/costs`, `GET …/costs.csv`
 
 ---
 
@@ -427,6 +445,13 @@ Any feature calls llm.py
 | **Code analysis** | Public Git repositories (HTTPS), local graphs via `archflow-codegraph`; ~30 languages through tree-sitter |
 | **Observability** | Langfuse (optional LLM tracing) |
 | **Issue tracking** | Jira Cloud: preview, then push requirements as epics (one per owning component), stories with Given/When/Then criteria and story points, sub-tasks from the low-level design and "blocks" links from connections; idempotent re-push, 429 backoff, status read back next to requirements. Admins connect it per organization (API token encrypted); developers push |
+| **GitHub Issues** | Preview, then push requirements as issues (`REQ-001: …`, description, acceptance criteria as a task list, priority, implementing components, source; labels `archflow`, `priority:<p>`, `requirement` / `nfr:<category>`). Re-pushes update changed issues and skip unchanged ones (content hash), an unrecorded issue is found again by a hidden marker, a removed requirement closes its issue; issue state is read back next to requirements. GitHub Enterprise Server via its `/api/v3` URL |
+| **Confluence** | Publish a branch's architecture specification (the Markdown / PDF export) as a page in a space, optionally under a parent page; re-publishing updates the same page as a new version and skips an unchanged spec. Can reuse the org's Jira credentials on the same Atlassian site |
+| **Slack / Microsoft Teams** | Incoming webhooks (Slack, Teams Workflows) get a short message with a link back when a version is saved, a review is requested or answered, a document or meeting is imported, or the project is pushed to Jira / GitHub / Confluence; each channel chooses its events. Sent in the background (a failing webhook never fails the action; the last error is shown in settings) |
+| **Meetings** | Transcripts from Teams, Zoom and Google Meet (`.vtt`, `.srt`, text, Word); recordings through OpenAI Whisper (or any LiteLLM speech-to-text model) |
+| **Embeddings** | Gemini or OpenAI embeddings for the knowledge base (any LiteLLM embedding model via `ARCHFLOW_MODEL_EMBEDDING`) |
+
+GitHub, Confluence, Slack and Teams are connected per organization by admins under **Integrations** on the projects page; tokens and webhook URLs are encrypted with `ARCHFLOW_SECRET_KEY` and never shown again (only their last 4 characters). Outbound requests go only to public https hosts and never follow redirects.
 
 ---
 
@@ -507,6 +532,21 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) (use `localhost` exactly — the origin check rejects other hosts).
 
+**Database.** With `DATABASE_URL` empty the API uses SQLite at `backend/data/archflow.db`, so you don't need Docker or Postgres. If your `.env` points `DATABASE_URL` at Postgres and Postgres isn't running (Docker stopped, for example), either start it with `docker compose up -d postgres` or override the value for this run only. Values already set in the environment take precedence over `.env`:
+
+```bash
+DATABASE_URL= uv run uvicorn archflow.main:app --reload --port 8000                 # bash / Git Bash
+$env:DATABASE_URL=""; uv run uvicorn archflow.main:app --reload --port 8000          # PowerShell
+```
+
+**Check that everything is up:**
+
+```bash
+curl -s localhost:8000/api/health     # API → 200
+curl -sI localhost:5173 | head -1     # web app → 200
+# the collab terminal prints "[collab] listening on :1234"
+```
+
 ### 4. First steps
 
 1. **Create an account** — the first account becomes owner of every existing organization
@@ -514,6 +554,10 @@ Open [http://localhost:5173](http://localhost:5173) (use `localhost` exactly —
 3. **New project** — start blank or from the **AI customer-support** example
 4. **Assistant → Design** — describe your idea, answer the questions, apply an architecture
 5. **Invite a teammate** — **Members & invites** → create a link; open it in a private window to see multiplayer
+6. **Price it** — **Tools → Cost estimate** gives monthly production and staging cost per component, plus a CSV export. With AI on, it takes about 15 seconds
+7. **Add knowledge** — **Tools → Knowledge base** → upload PRDs, policies or transcripts, then use **Ask** for answers with citations
+8. **Import a meeting** — **Requirements → 🎙 Meeting** → upload a `.vtt`, `.srt`, `.docx` or recording and review the proposed requirements, decisions and action items
+9. **Connect tools** (admins) — **Integrations** on the projects page: GitHub Issues, Confluence, Slack and Teams
 
 ### 5. (Optional) Repository analysis
 
@@ -569,7 +613,12 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 | `ARCHFLOW_DOCS_AZURE` | `https://learn.microsoft.com/api/mcp` | Azure documentation MCP server (URL, `stdio:<command>` or `off`) |
 | `ARCHFLOW_DOCS_AWS` | `https://knowledge-mcp.global.api.aws` | AWS documentation MCP server, e.g. `stdio:uvx awslabs.aws-documentation-mcp-server@latest` for the local one |
 | `ARCHFLOW_REDACT` | `on` | What is removed from every model request: `on` (emails, phone, card and IBAN numbers, put back into the answer; and secrets — cloud/API keys, tokens, JWTs, private keys, `password=…` — never sent nor returned), `secrets` (secrets only) or `off`. Secrets in answers are masked; counts per category and prompt-injection signals in untrusted content are recorded in the run's trace |
-| `ARCHFLOW_INTAKE_MAX_MB` | `20` | Largest document accepted by **Requirements → Import** |
+| `ARCHFLOW_INTAKE_MAX_MB` | `20` | Largest document accepted by **Requirements → Import**, meeting import and the knowledge base |
+| `ARCHFLOW_MODEL_EMBEDDING` | Gemini, else OpenAI | Embedding model for the knowledge base (LiteLLM id); `ARCHFLOW_EMBEDDINGS=off` keeps it keyword-only |
+| `ARCHFLOW_MODEL_TRANSCRIBE` | `openai/whisper-1` | Speech-to-text model for meeting recordings; `ARCHFLOW_TRANSCRIBE=off` never sends audio (recordings cannot be redacted) |
+| `ARCHFLOW_KB_MAX_DOCS` | `200` | Documents per project knowledge base |
+| `ARCHFLOW_COST_PRICES` | — | Override cost-estimate prices, e.g. `{"aws:db.relational": {"vcpu_hour": 0.07}}` |
+| `ARCHFLOW_ALLOW_ANY_WEBHOOK` | `false` | Allow notification webhooks on hosts other than Slack's and Microsoft's (still public https only) |
 | `ARCHFLOW_PROMPTS` | — | Pin prompt versions, e.g. `compare.evaluate=v1,design.turn=v2` (default: each prompt's `active` version) |
 | `ARCHFLOW_TRACES` | `full` | Agent traces: `full` (with prompt and response text), `metadata` (tokens, cost, timings only) or `off` |
 | `ARCHFLOW_TRACE_RETENTION_DAYS` | `30` | How long traces are kept |
@@ -768,7 +817,9 @@ The full production plan is in [docs/production-plan.md](docs/production-plan.md
 3. **Jira sync** — ✅ push (epics, stories, sub-tasks, links) with dry-run preview and status pull are done; next: Jira
    webhooks for live status, status shown on canvas components, and pulling new Jira issues back as requirements
 4. **More diagrams** from the same model: ~~sequence, C4, ER, deployment, data flow~~ (done, with Mermaid / PlantUML export); still to do: agent graph, MCP topology
-5. **Document intake** — ~~SRS/PDF/Word/Markdown → requirements~~ (done); meeting transcripts → live canvas
+5. **Document intake** — ~~SRS/PDF/Word/Markdown → requirements~~ and ~~meeting transcripts and recordings → requirements,
+   decisions and action items~~ (done);
+   next: speaker diarization for uploaded recordings and live meeting capture
 6. **Generation** of tests, infrastructure as code and documentation (SRS/BRD/runbooks)
 7. **Scale-out** — shared Redis for rate limits, jobs and real-time fan-out across API instances
 

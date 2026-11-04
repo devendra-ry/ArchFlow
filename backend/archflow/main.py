@@ -24,7 +24,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from pydantic import BaseModel, Field
 
 from . import (accounts, ai, approvals, openspec_service, diagram_export, auth, catalog, chat, collab_sync, comments, conversations,
-               decisions, lld, llm, history, intake, observability, review, secrets_box, suggestions, usage, users, exports, diagrams, jira)
+               decisions, lld, llm, history, intake, observability, review, secrets_box, suggestions, usage, users, exports, diagrams, jira,
+               costs, integrations, knowledge, meetings)
 from .analysis import full_analysis, trace_requirement
 from .codegraph.service import CodeGraphService
 from .codegraph.service import register_routes as register_codegraph_routes
@@ -322,6 +323,8 @@ def create_app(store: Store | None = None) -> FastAPI:
         state = state_or_404(pid, branch)
         version = store.commit(pid, branch, message, author, state)
         await hub.broadcast(Hub.key(pid, branch), {"type": "versions", "actor": author})
+        integrations.notify(store, project_or_404(pid).get("org_id"), pid, "version",
+                            f"{author} saved v{version['number']} on {branch}", message, branch=branch)
         return version
 
     # ---- repository analysis (code graph → reconstruction, drift, impact); see codegraph/service.py ----
@@ -557,8 +560,10 @@ def create_app(store: Store | None = None) -> FastAPI:
         memory = conversations.memory_block(store, pid)
         if memory:
             context += "\n" + memory
+        kb = await asyncio.to_thread(knowledge.context_block, store, pid, body.question, a.org_id)
         try:
-            answer = await asyncio.to_thread(ai.claude_ask, context, body.question, a.org_id)
+            extra = {"knowledge": kb} if kb else {}
+            answer = await asyncio.to_thread(lambda: ai.claude_ask(context, body.question, a.org_id, **extra))
         except ai.AIUnavailable as exc:
             raise HTTPException(503, f"{exc}. Set GEMINI_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY), or add "
                                      "your organization's key in AI settings, to use the project assistant.") from exc
@@ -653,8 +658,20 @@ def create_app(store: Store | None = None) -> FastAPI:
     # branch merge: three-way diff, conflict resolution (optionally AI-assisted), applied as ops (merge.py)
     register_merge_routes(app, store, authz=authz, commit_ops=commit_ops, broadcast=broadcast_room)
     history.register_routes(app, store, authz=authz, state_or_404=state_or_404, commit_ops=commit_ops)
+    def notify(org_id: str | None, pid: str, event: str, title: str, text: str, branch: str = "main") -> None:
+        integrations.notify(store, org_id, pid, event, title, text, branch=branch)
+
     intake.register_routes(app, store, authz=authz, state_or_404=state_or_404, commit_ops=commit_ops,
-                           broadcast=broadcast_room)
+                           broadcast=broadcast_room, notify=notify)
+    # ---- meeting transcripts and recordings → requirements, decisions, action items (meetings.py) ----
+    meetings.register_routes(app, store, authz=authz, state_or_404=state_or_404, commit_ops=commit_ops,
+                             broadcast=broadcast_room, notify=notify)
+    # ---- project knowledge base: documents, hybrid search, cited answers (knowledge.py) ----
+    knowledge.register_routes(app, store, authz=authz, broadcast=broadcast_room)
+    # ---- cost estimate of the architecture (costs.py) ----
+    costs.register_routes(app, store, authz=authz, state_or_404=state_or_404)
+    # ---- GitHub Issues, Confluence, Slack and Teams (integrations.py) ----
+    integrations.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room)
     # ---- spec exports (Markdown, print/PDF, JSON, YAML) and coding-agent guides (exports.py) ----
     exports.register_routes(app, store, authz=authz, state_or_404=state_or_404)
     jira.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room)

@@ -32,7 +32,7 @@ from .db import migrate
 from .db.models import (Activity, AITrace, AIUsage, ApiToken, Approval, Base, Branch, CodeGraph, Comment, Conversation, ConversationMessage,
                         Decision, Invite, Membership, Notification, OAuthClient, OAuthCode, OpenSpecChange, OpenSpecFile, Org, OrgAIBudget,
                         OrgApprovalPolicy, OrgAIConfig, OrgAIKey, Project, ProjectMemory, RequirementRevision, User, UserSession, Version,
-                        YDoc, ExternalLink, OrgJiraConnection)
+                        YDoc, ExternalLink, OrgJiraConnection, KbChunk, KbDocument, OrgIntegration)
 from .db.types import now
 from .models import ProjectState
 
@@ -84,6 +84,10 @@ PROJECT_COLS = ("id", "name", "description", "created_at", "org_id")
 EXTERNAL_LINK_COLS = ("object_kind", "object_id", "external_key", "external_url", "content_hash", "status",
                       "status_category", "status_checked_at", "updated_at")
 JIRA_CONNECTION_COLS = ("org_id", "site_url", "email", "ciphertext", "last4", "project_key", "updated_by", "updated_at")
+INTEGRATION_COLS = ("org_id", "kind", "config", "ciphertext", "last4", "updated_by", "updated_at")
+KB_DOCUMENT_COLS = ("id", "project_id", "name", "type", "origin", "chars", "chunks", "embedding_model", "created_by",
+                    "created_at")
+KB_CHUNK_COLS = ("id", "document_id", "ord", "section", "page", "locator", "text", "embedding")
 TOKEN_COLS = ("id", "kind", "org_id", "user_name", "user_id", "scopes", "client_id", "name", "resource",
               "created_at", "expires_at", "last_used_at", "revoked")
 
@@ -399,6 +403,78 @@ class Store:
     def delete_jira_connection(self, org_id: str) -> None:
         with self._s() as s:
             s.execute(delete(OrgJiraConnection).where(OrgJiraConnection.org_id == org_id))
+
+    # ---- org integrations (GitHub, Confluence, Slack, Teams) ------------------------
+    def set_integration(self, org_id: str, kind: str, *, config: dict[str, Any], ciphertext: str, last4: str,
+                        user_id: str | None) -> None:
+        with self._s() as s:
+            self._upsert(s, OrgIntegration, {"org_id": org_id, "kind": kind, "config": config, "ciphertext": ciphertext,
+                                             "last4": last4, "updated_by": user_id, "updated_at": now()},
+                         ["org_id", "kind"])
+
+    def get_integration(self, org_id: str, kind: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            c = s.get(OrgIntegration, (org_id, kind))
+            return c.to_dict(*INTEGRATION_COLS) if c else None
+
+    def list_integrations(self, org_id: str) -> list[dict[str, Any]]:
+        with self._s() as s:
+            rows = s.scalars(select(OrgIntegration).where(OrgIntegration.org_id == org_id).order_by(OrgIntegration.kind))
+            return [x.to_dict(*INTEGRATION_COLS) for x in rows]
+
+    def delete_integration(self, org_id: str, kind: str) -> None:
+        with self._s() as s:
+            s.execute(delete(OrgIntegration).where(OrgIntegration.org_id == org_id, OrgIntegration.kind == kind))
+
+    # ---- knowledge base (documents and chunks) ---------------------------------------
+    def add_kb_document(self, pid: str, *, name: str, type: str, origin: str, chars: int, embedding_model: str,
+                        created_by: str, chunks: list[dict[str, Any]]) -> dict[str, Any]:
+        """Store a document and its chunks ({section, page, locator, text, embedding}) in one transaction."""
+        did = f"kb-{secrets.token_hex(6)}"
+        with self._s() as s:
+            s.add(KbDocument(id=did, project_id=pid, name=name, type=type, origin=origin, chars=chars,
+                             chunks=len(chunks), embedding_model=embedding_model, created_by=created_by,
+                             created_at=now()))
+            s.flush()
+            for i, c in enumerate(chunks):
+                s.add(KbChunk(document_id=did, project_id=pid, ord=i, section=c.get("section") or "",
+                              page=c.get("page"), locator=c.get("locator") or "", text=c["text"],
+                              embedding=c.get("embedding")))
+            s.flush()
+            return s.get(KbDocument, did).to_dict(*KB_DOCUMENT_COLS)
+
+    def list_kb_documents(self, pid: str) -> list[dict[str, Any]]:
+        with self._s() as s:
+            rows = s.scalars(select(KbDocument).where(KbDocument.project_id == pid)
+                             .order_by(KbDocument.created_at.desc(), KbDocument.id))
+            return [x.to_dict(*KB_DOCUMENT_COLS) for x in rows]
+
+    def get_kb_document(self, pid: str, did: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            d = s.get(KbDocument, did)
+            return d.to_dict(*KB_DOCUMENT_COLS) if d and d.project_id == pid else None
+
+    def delete_kb_document(self, pid: str, did: str) -> bool:
+        with self._s() as s:
+            s.execute(delete(KbChunk).where(KbChunk.document_id == did, KbChunk.project_id == pid))
+            return bool(s.execute(delete(KbDocument).where(KbDocument.id == did, KbDocument.project_id == pid)).rowcount)
+
+    def list_kb_chunks(self, pid: str, document_id: str | None = None) -> list[dict[str, Any]]:
+        """Every chunk of the project (or one document), with its document's name and type."""
+        with self._s() as s:
+            q = (select(KbChunk, KbDocument.name, KbDocument.type).join(KbDocument, KbDocument.id == KbChunk.document_id)
+                 .where(KbChunk.project_id == pid))
+            if document_id:
+                q = q.where(KbChunk.document_id == document_id)
+            rows = s.execute(q.order_by(KbChunk.document_id, KbChunk.ord))
+            return [{**c.to_dict(*KB_CHUNK_COLS), "document": name, "type": typ} for c, name, typ in rows]
+
+    def set_kb_embeddings(self, did: str, model: str, vectors: dict[int, list[float]]) -> None:
+        """Replace a document's embeddings ({chunk id: vector}) and record the model that made them."""
+        with self._s() as s:
+            for cid, vec in vectors.items():
+                s.execute(update(KbChunk).where(KbChunk.id == cid, KbChunk.document_id == did).values(embedding=vec))
+            s.execute(update(KbDocument).where(KbDocument.id == did).values(embedding_model=model))
 
     # ---- links to external trackers (Jira issues) ---------------------------------
     def list_external_links(self, pid: str, system: str = "jira") -> list[dict[str, Any]]:

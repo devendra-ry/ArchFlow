@@ -67,6 +67,21 @@ test("requirements: import from a Markdown document, review and accept", async (
   await expect(page.locator(".req-list")).toContainText(/from prd\.md/);
 });
 
+test("requirements: a document import still finishes when the server answers with plain JSON", async ({ page }) => {
+  await openNewProject(page, `Import json ${Date.now()}`);
+  await tab(page, "Requirements");
+  // Without the event-stream Accept header the server answers the old way: the whole proposal as JSON.
+  await page.route("**/requirements/import?*", (route) =>
+    route.continue({ headers: { ...route.request().headers(), accept: "application/json" } }));
+  await page.getByRole("button", { name: "⇪ Import" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import requirements from a document" });
+  await dialog.getByLabel("Document").setInputFiles({
+    name: "plain.md", mimeType: "text/markdown", buffer: Buffer.from("# Spec\n\n- The system shall export invoices.\n"),
+  });
+  await expect(dialog.getByRole("button", { name: /^Add \d+ requirements?$/ })).toBeEnabled();
+  await expect(dialog.getByText(/connection closed/)).toHaveCount(0);
+});
+
 test("requirements: a document import shows its steps and can be cancelled", async ({ page }) => {
   await openNewProject(page, `Import cancel ${Date.now()}`);
   await tab(page, "Requirements");

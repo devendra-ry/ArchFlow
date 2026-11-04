@@ -8,6 +8,8 @@ import type { OpenSpecChange, OpenSpecJob, OpenSpecOverview } from "./types";
 import type { ApprovalPolicy, VersionReview } from "./types";
 import type { AIUsageReport, AiSuggestion, AiTrace, AiTraceList, PromptInfo, ReviewResult, SuggestionMode } from "./types";
 import type { JiraLinks, JiraPlan, JiraPushResult, JiraSettings, JiraTestResult } from "./types";
+import type { ConfluencePublish, CostEstimate, ExternalLinks, GitHubPlan, GitHubPushResult, IntegrationKind, IntegrationSettings } from "./types";
+import type { KbAnswer, KbDocument, KbPassage, KbStatus, MeetingDecision, MeetingResult, MeetingStep } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, public data: any) {
@@ -115,13 +117,28 @@ async function* sseEvents(res: Response): AsyncGenerator<{ event: string; data: 
  */
 async function importStream(pid: string, branch: string, file: File, onProgress: (step: IntakeStep) => void,
   signal?: AbortSignal): Promise<IntakeResult> {
-  const res = await fetch(`/api/projects/${pid}/requirements/import?${new URLSearchParams({ filename: file.name, branch })}`, {
+  return uploadStream<IntakeResult, IntakeStep>(`/api/projects/${pid}/requirements/import`, { filename: file.name, branch },
+    file, onProgress, signal);
+}
+
+/** Upload a meeting transcript or recording and follow the progress until the proposal arrives (abort cancels). */
+async function meetingStream(pid: string, branch: string, file: File, knowledge: boolean,
+  onProgress: (step: MeetingStep) => void, signal?: AbortSignal): Promise<MeetingResult> {
+  return uploadStream<MeetingResult, MeetingStep>(`/api/projects/${pid}/meetings/import`,
+    { filename: file.name, branch, knowledge: String(knowledge) }, file, onProgress, signal);
+}
+
+async function uploadStream<T, S>(url: string, params: Record<string, string>, file: File, onProgress: (step: S) => void,
+  signal?: AbortSignal): Promise<T> {
+  const res = await fetch(`${url}?${new URLSearchParams(params)}`, {
     method: "POST", credentials: "include", signal, body: file,
     headers: { "Content-Type": "application/octet-stream", Accept: "text/event-stream" },
   });
+  // A server that does not stream answers with the proposal as plain JSON.
+  if (res.ok && res.headers.get("Content-Type")?.includes("application/json")) return await res.json() as T;
   for await (const { event, data } of sseEvents(res)) {
-    if (event === "progress") onProgress(data as IntakeStep);
-    else if (event === "done") return data as IntakeResult;
+    if (event === "progress") onProgress(data as S);
+    else if (event === "done") return data as T;
     else if (event === "error") throw new ApiError(data.status, { detail: data.message });
     else if (event === "cancelled") throw new DOMException("The import was cancelled.", "AbortError");
   }
@@ -366,4 +383,45 @@ export const api = {
     call<JiraPushResult>("POST", `/projects/${pid}/jira/push`, { project_key: project_key || null, ai, confirm: true }, b(branch)),
   jiraRefresh: (pid: string, branch: string) =>
     call<{ updated: number; links: JiraLinks["links"] }>("POST", `/projects/${pid}/jira/refresh`, undefined, b(branch)),
+  // ---- meeting intake ----
+  /** Read a transcript or recording into proposed requirements, decisions and action items (nothing applied yet). */
+  importMeeting: meetingStream,
+  acceptMeeting: (pid: string, branch: string, file: MeetingResult["file"], requirements: Record<string, unknown>[],
+    decisions: Omit<MeetingDecision, "id" | "selected">[], memory: { text: string; category: MemoryCategory }[]) =>
+    call<{ added: string[]; summary: string[]; decisions: Decision[]; memory: MemoryItem[] }>(
+      "POST", `/projects/${pid}/meetings/import/accept`, { file, requirements, decisions, memory }, b(branch)),
+  // ---- knowledge base ----
+  knowledge: (pid: string) => call<KbStatus>("GET", `/projects/${pid}/knowledge`),
+  addKnowledge: (pid: string, file: File) =>
+    upload<KbDocument>(`/projects/${pid}/knowledge`, file, { filename: file.name }, "application/octet-stream"),
+  deleteKnowledge: (pid: string, id: string) => call<null>("DELETE", `/projects/${pid}/knowledge/${id}`),
+  knowledgePassages: (pid: string, id: string) =>
+    call<KbDocument & { passages: Omit<KbPassage, "ref" | "score" | "keyword_rank" | "vector_score">[] }>("GET", `/projects/${pid}/knowledge/${id}/chunks`),
+  searchKnowledge: (pid: string, query: string, limit = 8) =>
+    call<{ query: string; mode: "hybrid" | "keyword"; results: KbPassage[] }>("POST", `/projects/${pid}/knowledge/search`, { query, limit }),
+  askKnowledge: (pid: string, question: string) => call<KbAnswer>("POST", `/projects/${pid}/knowledge/ask`, { question }),
+  reindexKnowledge: (pid: string) =>
+    call<KbStatus & { model: string; reindexed: number; failed: { id: string; name: string; error: string }[] }>("POST", `/projects/${pid}/knowledge/reindex`),
+  // ---- cost estimate ----
+  costs: (pid: string, branch: string, assumptions: Record<string, unknown>, ai = true) =>
+    call<CostEstimate>("POST", `/projects/${pid}/costs`, { assumptions, ai }, b(branch)),
+  costsCsv: (pid: string, branch: string) => download(`/projects/${pid}/costs.csv`, { branch }, "costs.csv"),
+
+  // ---- integrations (settings: admins; GitHub push and Confluence publish: developers and up) ----
+  integrations: (org: string) => call<IntegrationSettings>("GET", `/orgs/${org}/integrations`),
+  saveIntegration: (org: string, kind: IntegrationKind, config: Record<string, unknown>, secret: string | null) =>
+    call<IntegrationSettings>("PUT", `/orgs/${org}/integrations/${kind}`, { config, secret }),
+  deleteIntegration: (org: string, kind: IntegrationKind) => call<null>("DELETE", `/orgs/${org}/integrations/${kind}`),
+  testIntegration: (org: string, kind: IntegrationKind) =>
+    call<{ ok: boolean; detail?: string; error?: string }>("POST", `/orgs/${org}/integrations/${kind}/test`),
+  githubLinks: (pid: string) => call<ExternalLinks>("GET", `/projects/${pid}/github/links`),
+  githubPlan: (pid: string, branch: string, include_nfr?: boolean) =>
+    call<GitHubPlan>("POST", `/projects/${pid}/github/plan`, { include_nfr: include_nfr ?? null }, b(branch)),
+  githubPush: (pid: string, branch: string, include_nfr?: boolean) =>
+    call<GitHubPushResult>("POST", `/projects/${pid}/github/push`, { include_nfr: include_nfr ?? null, confirm: true }, b(branch)),
+  githubRefresh: (pid: string, branch: string) =>
+    call<{ updated: number; links: ExternalLinks["links"] }>("POST", `/projects/${pid}/github/refresh`, undefined, b(branch)),
+  confluenceLinks: (pid: string) => call<ExternalLinks>("GET", `/projects/${pid}/confluence/links`),
+  confluencePublish: (pid: string, branch: string, dry_run: boolean) =>
+    call<ConfluencePublish>("POST", `/projects/${pid}/confluence/publish`, { dry_run }, b(branch)),
 };

@@ -492,3 +492,48 @@ class AITrace(Base):
     model_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[str] = created()
+
+
+# --------------------------------------------------------------------------- knowledge base (RAG)
+class KbDocument(Base):
+    """A document in a project's knowledge base: an upload, an imported spec or a meeting transcript."""
+    __tablename__ = "kb_documents"
+    __table_args__ = (Index("idx_kb_documents_project", "project_id", "created_at"),)
+    id: Mapped[str] = mapped_column(Text, primary_key=True)  # kb-<hex>
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False)  # pdf | docx | md | txt | vtt | srt | audio
+    origin: Mapped[str] = mapped_column(Text, nullable=False, default="upload", server_default="upload")  # upload | import | meeting
+    chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    embedding_model: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")  # "" = keywords only
+    created_by: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    created_at: Mapped[str] = created()
+
+
+class KbChunk(Base):
+    """One retrievable passage of a knowledge-base document, with its embedding when a model made one."""
+    __tablename__ = "kb_chunks"
+    __table_args__ = (Index("idx_kb_chunks_project", "project_id"), Index("idx_kb_chunks_document", "document_id", "ord"))
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    document_id: Mapped[str] = mapped_column(Text, _fk("kb_documents.id"), nullable=False)
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), nullable=False)
+    ord: Mapped[int] = mapped_column(Integer, nullable=False)
+    section: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    page: Mapped[int | None] = mapped_column(Integer)
+    locator: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")  # e.g. a meeting timestamp
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(JSONType, nullable=True)
+
+
+# --------------------------------------------------------------------------- integrations (GitHub, Confluence, Slack, Teams)
+class OrgIntegration(Base):
+    """An org's connection to one outside service. The secret (token or webhook URL) is encrypted like the AI keys."""
+    __tablename__ = "org_integrations"
+    org_id: Mapped[str] = mapped_column(Text, _fk("orgs.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)  # github | confluence | slack | teams
+    config: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict, server_default="{}")
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    last4: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)

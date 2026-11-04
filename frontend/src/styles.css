@@ -1121,3 +1121,40 @@ button.danger.ghost { color: var(--danger); }
 .jira-action.update { color: var(--warn); }
 .jira-detail { padding: 4px 12px 10px 28px; }
 .jira-desc { white-space: pre-wrap; font-size: 11px; max-height: 220px; overflow: auto; background: var(--panel-2); padding: 8px; border-radius: 6px; }
+
+/* ---- meeting import ---- */
+.meeting-summary { background: color-mix(in srgb, var(--primary) 8%, var(--panel)); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 0; }
+.meeting-owner { width: 110px; }
+.intake-badge.ok-badge { background: color-mix(in srgb, var(--ok, #16a34a) 18%, var(--panel)); color: var(--ok, #16a34a); }
+.modal.intake h4 { margin: 8px 0 2px; font-size: 13px; }
+
+/* ---- knowledge base ---- */
+.kb-answer { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.kb-citations { margin: 0; padding-left: 18px; color: var(--muted); }
+.kb-citations q { color: var(--text); }
+.kb-results { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.kb-results li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.kb-text { white-space: pre-wrap; max-height: 9em; overflow: auto; margin-top: 4px; }
+
+/* ---- cost estimate ---- */
+.modal.costs { width: min(1040px, 100%); max-height: 92vh; overflow-y: auto; }
+.modal.costs h4 { margin: 6px 0 2px; font-size: 13px; }
+.cost-totals { display: flex; flex-wrap: wrap; gap: 10px; }
+.cost-totals > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 130px; }
+.cost-totals b { font-size: 18px; }
+.cost-budget.within { border-color: var(--ok, #16a34a); }
+.cost-budget.at_risk { border-color: var(--warn); }
+.cost-budget.over { border-color: var(--danger); color: var(--danger); }
+.cost-assumptions summary { cursor: pointer; }
+.cost-assumptions .grid2 { margin: 8px 0; }
+.cost-assumptions input, .cost-assumptions select { width: 100%; }
+.cost-lines td.num, .cost-lines th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.cost-line { cursor: pointer; }
+.cost-line:hover { background: color-mix(in srgb, var(--primary) 6%, var(--panel)); }
+.conf-low { color: var(--warn); }
+.cost-recs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.cost-recs li { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+button.link { background: none; border: none; padding: 0; color: var(--primary); cursor: pointer; font: inherit; text-align: left; }
+
+/* ---- Confluence preview ---- */
+.confluence-preview { width: 100%; height: 360px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }

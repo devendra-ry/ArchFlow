@@ -738,9 +738,62 @@ def _sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+def stream_job(work: Callable[[Progress, Cancelled], dict[str, Any]], *, running: set[Any], first: dict[str, Any],
+               on_done: Callable[[dict[str, Any]], Awaitable[None]], on_error: Callable[[str], None],
+               on_cancel: Callable[[], None], failure: str, what: str) -> StreamingResponse:
+    """Run ``work(progress, cancelled)`` in a thread and answer with server-sent events: ``progress`` while it runs,
+    then ``done`` (its result), ``error`` {status, message} (an IntakeError, or ``failure`` for anything else) or
+    ``cancelled``. Closing the connection cancels the job (``cancelled()`` turns true). Used by document and meeting
+    imports."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
+    cancel = threading.Event()
+
+    def emit(kind: str, payload: dict[str, Any]) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, (kind, payload))
+
+    def run() -> None:
+        try:
+            emit("done", work(lambda step: emit("progress", step), cancel.is_set))
+        except ImportCancelled:
+            emit("cancelled", {})  # nobody is listening any more; ends the queue
+        except IntakeError as exc:
+            emit("error", {"status": exc.status, "message": str(exc)})
+        except Exception:  # noqa: BLE001 - reported to the person, details logged
+            log.exception("%s failed", what)
+            emit("error", {"status": 500, "message": failure})
+
+    task = asyncio.ensure_future(asyncio.to_thread(run))
+    running.add(task)
+    task.add_done_callback(running.discard)
+
+    async def events():
+        ended = False
+        try:
+            yield _sse("progress", first)
+            while True:
+                kind, payload = await queue.get()
+                if kind == "done":
+                    await on_done(payload)
+                elif kind == "error":
+                    on_error(payload["message"])
+                ended = kind != "progress"
+                yield _sse(kind, payload)
+                if ended:
+                    return
+        finally:
+            if not ended:  # the person cancelled: the connection closed before the result was sent
+                cancel.set()
+                on_cancel()
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+
 def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Callable[[str, str], ProjectState],
                     commit_ops: Callable[..., Awaitable[tuple[ProjectState, list[str]]]],
-                    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]]) -> None:
+                    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]],
+                    notify: Callable[..., None] | None = None) -> None:
     edit = authz.project("edit")
     running: set[asyncio.Future[Any]] = set()  # imports still reading after their stream closed
 
@@ -788,51 +841,15 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
 
     def stream_import(pid: str, branch: str, a: Any, name: str, body: bytes, state: ProjectState,
                       proposed: Callable[[dict[str, Any]], Awaitable[None]]) -> StreamingResponse:
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
-        cancel = threading.Event()
+        def work(progress: Progress, cancelled: Cancelled) -> dict[str, Any]:
+            doc = read_document(name, body, progress, cancelled)
+            return propose(doc, state, a.org_id, progress=progress, cancelled=cancelled)
 
-        def emit(kind: str, payload: dict[str, Any]) -> None:
-            loop.call_soon_threadsafe(queue.put_nowait, (kind, payload))
-
-        def work() -> None:
-            progress = lambda step: emit("progress", step)  # noqa: E731
-            try:
-                doc = read_document(name, body, progress, cancel.is_set)
-                emit("done", propose(doc, state, a.org_id, progress=progress, cancelled=cancel.is_set))
-            except ImportCancelled:
-                emit("cancelled", {})  # nobody is listening any more; ends the queue
-            except IntakeError as exc:
-                emit("error", {"status": exc.status, "message": str(exc)})
-            except Exception:  # noqa: BLE001 - reported to the person, details logged
-                log.exception("importing %s into %s failed", name, pid)
-                emit("error", {"status": 500, "message": "Something went wrong while reading the document."})
-
-        task = asyncio.ensure_future(asyncio.to_thread(work))
-        running.add(task)
-        task.add_done_callback(running.discard)
-
-        async def events():
-            ended = False
-            try:
-                yield _sse("progress", _step("upload", f"Uploaded {name} ({len(body) / 1024:,.0f} KB)"))
-                while True:
-                    kind, payload = await queue.get()
-                    if kind == "done":
-                        await proposed(payload)
-                    elif kind == "error":
-                        log_outcome(pid, branch, a.actor, f"import {name} rejected: {payload['message']}")
-                    ended = kind != "progress"
-                    yield _sse(kind, payload)
-                    if ended:
-                        return
-            finally:
-                if not ended:  # the person cancelled: the connection closed before the result was sent
-                    cancel.set()
-                    log_outcome(pid, branch, a.actor, f"import {name} cancelled")
-
-        return StreamingResponse(events(), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+        return stream_job(work, running=running, first=_step("upload", f"Uploaded {name} ({len(body) / 1024:,.0f} KB)"),
+                          on_done=proposed, failure="Something went wrong while reading the document.",
+                          on_error=lambda msg: log_outcome(pid, branch, a.actor, f"import {name} rejected: {msg}"),
+                          on_cancel=lambda: log_outcome(pid, branch, a.actor, f"import {name} cancelled"),
+                          what=f"importing {name} into {pid}")
 
     @app.post("/api/projects/{pid}/requirements/import/accept")
     async def accept_import(pid: str, body: AcceptIn, branch: str = "main", a=Depends(edit)):
@@ -852,8 +869,11 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
                 saved.append(item)
         if saved:
             await broadcast(pid, branch, {"type": "memory", "actor": a.actor, "added": [m["text"] for m in saved]})
-        log_outcome(pid, branch, a.actor, f"import {name}: accepted {len(ops)} requirement(s)"
-                    + (f", saved {len(saved)} note(s) to memory" if body.memory else ""))
+        line = (f"import {name}: accepted {len(ops)} requirement(s)"
+                + (f", saved {len(saved)} note(s) to memory" if body.memory else ""))
+        log_outcome(pid, branch, a.actor, line)
+        if notify and ops:
+            notify(a.org_id, pid, "import", f"{a.actor} imported requirements from {name}", line, branch=branch)
         added = [r.id for r in (state.requirements.values() if state else []) if r.source.get("at") == at]
         return {"added": added, "summary": summary, "memory": saved,
                 **({"state": state.model_dump()} if state else {})}

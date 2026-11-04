@@ -1063,9 +1063,11 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
                     raise HTTPException(502, f"Jira push failed: {exc}") from exc
                 c = out["counts"]
                 state = state_or_404(pid, branch)
-                store.log_activity(pid, branch, a.actor, [
-                    f"pushed to Jira {out['project_key']}: {c['created']} created, {c['updated']} updated, "
-                    f"{c['unchanged']} unchanged, {c['failed']} failed"], state.rev)
+                line = (f"pushed to Jira {out['project_key']}: {c['created']} created, {c['updated']} updated, "
+                        f"{c['unchanged']} unchanged, {c['failed']} failed")
+                store.log_activity(pid, branch, a.actor, [line], state.rev)
+                from . import integrations  # imported here: integrations builds on this module
+                integrations.notify(store, a.org_id, pid, "push", f"{a.actor} pushed to Jira", line, branch=branch)
                 return {**out, "engine": plan["engine"]}
             finally:
                 lock.release()

@@ -165,6 +165,12 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
             kind = "changes_requested" if action == "request_changes" else "approved"
         store.add_review_notifications(to, pid=pid, branch=v["branch"], version=number, kind=kind,
                                        actor_name=a.actor, preview=comment or v["message"])
+        from . import integrations
+
+        what = {"review_requested": "asked for a review of", "changes_requested": "requested changes to",
+                "approved": "approved"}[kind]
+        integrations.notify(store, a.org_id, pid, "approval", f"{a.actor} {what} v{number}",
+                            comment or v["message"], branch=v["branch"])
         await broadcast(pid, v["branch"], {"type": "versions", "actor": a.actor})
         return after
 

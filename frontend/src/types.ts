@@ -490,6 +490,97 @@ export interface IntakeResult {
   stakeholders: string[];
 }
 
+// ---- meeting intake (transcripts and recordings) ----
+export interface MeetingProposal extends Omit<IntakeProposal, "section" | "page"> {
+  speaker: string; timestamp: string; agreement: "agreed" | "proposed" | "disputed";
+}
+export interface MeetingDecision {
+  id: string; title: string; decision: string; rationale: string; alternatives: string[]; decided_by: string;
+  timestamp: string; selected: boolean;
+}
+export interface MeetingAction { id: string; task: string; owner: string; due: string; timestamp: string; selected: boolean }
+export interface MeetingNote { text: string; timestamp?: string }
+export interface MeetingStep { stage: "upload" | "read" | "split" | "extract" | "compare" | "knowledge"; message: string; done?: number; total?: number }
+export interface MeetingResult {
+  engine: "llm" | "offline" | "mixed"; notes: string[];
+  file: { name: string; type: string; turns: number; speakers: string[]; duration: string; chars: number; chunks: number };
+  reader: { transcription: string; model: string };
+  summary: string; participants: string[];
+  requirements: MeetingProposal[]; decisions: MeetingDecision[]; action_items: MeetingAction[];
+  open_questions: MeetingNote[]; assumptions: MeetingNote[]; constraints: MeetingNote[];
+  knowledge?: { id: string; chunks: number; embedded: boolean };
+}
+
+// ---- knowledge base ----
+export interface KbDocument {
+  id: string; project_id: string; name: string; type: string; origin: "upload" | "import" | "meeting"; chars: number;
+  chunks: number; embedding_model: string; created_by: string; created_at: string; note?: string;
+}
+export interface KbStatus {
+  documents: KbDocument[]; embedding_model: string; stale: number; chunks: number; max_documents: number; ai_available: boolean;
+}
+export interface KbPassage {
+  id: number; document_id: string; document: string; type: string; ord: number; section: string; page: number | null;
+  locator: string; text: string; ref: string; score: number; keyword_rank: number | null; vector_score: number | null;
+}
+export interface KbCitation {
+  ref: string; quote: string; document_id: string; document: string; section: string; page: number | null; locator: string;
+}
+export interface KbAnswer {
+  question: string; engine: "llm" | "offline"; mode: "hybrid" | "keyword"; answerable: boolean; answer: string;
+  citations: KbCitation[]; follow_ups: string[]; passages: KbPassage[];
+}
+
+// ---- cost estimate ----
+export interface CostAssumption { value: number | string | boolean; source: string; text?: string }
+export type CostAssumptionKey = "monthly_active_users" | "peak_rps" | "storage_gb" | "egress_gb" | "availability" |
+  "llm_calls_per_user" | "llm_input_tokens" | "llm_output_tokens" | "emails_per_user" | "messages_per_user" | "region" |
+  "include_staging" | "staging_share";
+export interface CostLine {
+  node_id: string; name: string; type: string; kind: string; technology: string; category: string; vendor: string;
+  monthly: number; low: number; high: number; basis: string; confidence: "high" | "medium" | "low"; notes: string[];
+}
+export interface CostRange { monthly: number; low: number; high: number }
+export interface CostRecommendation {
+  title: string; detail: string; saving_monthly: number; components: string[]; tradeoff: string; effort: "low" | "medium" | "high";
+}
+export interface CostEstimate {
+  currency: string; price_date: string; branch: string; engine: "llm" | "offline";
+  assumptions: Record<CostAssumptionKey, CostAssumption>; high_availability: boolean; lines: CostLine[];
+  production: CostRange; staging: CostRange; total: CostRange; annual: CostRange; by_category: Record<string, number>;
+  drivers: { name: string; monthly: number; share: number }[]; unpriced: string[]; disclaimer: string;
+  budget?: { monthly: number; source: string; text: string; status: "within" | "at_risk" | "over" };
+  recommendations: CostRecommendation[]; questions: string[];
+}
+
+// ---- integrations (GitHub, Confluence, Slack, Teams) ----
+export type IntegrationKind = "github" | "confluence" | "slack" | "teams";
+export interface IntegrationState {
+  kind: IntegrationKind; label: string; configured: boolean; config: Record<string, any>; has_secret: boolean;
+  last4: string | null; updated_at: string | null;
+}
+export interface IntegrationSettings {
+  encryption: boolean; events: Record<string, string>;
+  jira: { configured: boolean; site_url: string; email: string };
+  integrations: Record<IntegrationKind, IntegrationState>;
+}
+export interface ExternalLinks { connected: boolean; repo?: string; space_key?: string; links: JiraLink[] }
+export interface GitHubPlanItem {
+  ref: string; action: "create" | "update" | "skip" | "close"; title: string; labels: string[]; body: string;
+  external_key: string; external_url: string; status: string;
+}
+export interface GitHubPlan {
+  items: GitHubPlanItem[]; counts: Record<"create" | "update" | "skip" | "close", number>; repo: string; include_nfr: boolean;
+}
+export interface GitHubPushResult {
+  repo: string; counts: { created: number; updated: number; closed: number; unchanged: number; failed: number };
+  results: { ref: string; title: string; action: string; status: "ok" | "skipped" | "error"; key: string; url: string; error: string }[];
+}
+export interface ConfluencePublish {
+  title: string; space_key: string; action: "create" | "update" | "skip"; chars: number; url: string; page_id: string;
+  dry_run: boolean; preview?: string; version?: number;
+}
+
 // ---- Jira Cloud push ----
 export interface JiraSettings {
   /** False when the server cannot encrypt the token (no ARCHFLOW_SECRET_KEY): the connection cannot be saved. */

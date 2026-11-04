@@ -17,13 +17,14 @@ const NOTE_KINDS: { key: "assumptions" | "constraints" | "open_questions"; label
   { key: "open_questions", label: "Open questions", category: "context", prefix: "Open question: " },
 ];
 
-/** "prd.pdf §2.1 Login p. 3" from a provenance record. */
+/** "prd.pdf §2.1 Login p. 3" (a document) or "standup.vtt · Priya · 00:12:05" (a meeting) from a provenance record. */
 export function sourceLabel(src: Record<string, string> | undefined): string {
   if (!src || !src.ref) return "";
+  if (src.type === "meeting") return [`🎙 ${src.ref}`, src.section, src.timestamp].filter(Boolean).join(" · ");
   return [src.ref, src.section && `§ ${src.section}`, src.page && `p. ${src.page}`].filter(Boolean).join(" · ");
 }
 
-const STAGES: { key: IntakeStep["stage"]; label: string }[] = [
+export const STAGES: { key: string; label: string }[] = [
   { key: "upload", label: "Upload" },
   { key: "read", label: "Read the file" },
   { key: "split", label: "Split into parts" },
@@ -31,24 +32,25 @@ const STAGES: { key: IntakeStep["stage"]; label: string }[] = [
   { key: "compare", label: "Check duplicates and conflicts" },
 ];
 
-const size = (bytes: number) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+export const size = (bytes: number) => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 
 /** What the import is doing right now: each stage with its latest message, the current one spinning. */
-function ImportProgress({ file, steps, seconds, onCancel }: {
-  file: File; steps: Partial<Record<IntakeStep["stage"], IntakeStep>>; seconds: number; onCancel: () => void;
+export function ImportProgress({ file, steps, seconds, onCancel, stages = STAGES }: {
+  file: { name: string; size: number }; steps: Partial<Record<string, Omit<IntakeStep, "stage"> & { stage: string }>>; seconds: number;
+  onCancel: () => void; stages?: { key: string; label: string }[];
 }) {
-  const reached = STAGES.reduce((at, s, i) => (steps[s.key] ? i : at), 0);
+  const reached = stages.reduce((at, s, i) => (steps[s.key] ? i : at), 0);
   return (
     <div className="intake-progress" role="status" aria-live="polite">
       <div className="row between">
-        <span className="small"><span className="spinner" aria-hidden /> Reading <b>{file.name}</b> · {size(file.size)}</span>
+        <span className="small"><span className="spinner" aria-hidden /> Reading <b>{file.name}</b>{file.size > 0 && <> · {size(file.size)}</>}</span>
         <span className="small muted">{seconds}s</span>
       </div>
       <ol className="intake-steps">
-        {STAGES.map((s, i) => {
+        {stages.map((s, i) => {
           const step = steps[s.key];
           const state = i < reached ? "done" : i === reached ? "now" : "todo";
-          const message = step?.message ?? (s.key === "upload" ? `Sending ${size(file.size)} to the server…` : "");
+          const message = step?.message ?? (s.key === "upload" && file.size > 0 ? `Sending ${size(file.size)} to the server…` : "");
           return (
             <li key={s.key} className={state}>
               <span className="intake-step-icon" aria-hidden>{state === "done" ? "✓" : state === "now" ? <span className="spinner" /> : "○"}</span>
