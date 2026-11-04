@@ -268,6 +268,23 @@ class JiraClient:
                             json_body={"jql": jql, "fields": fields, "maxResults": max_results}) or {}
         return data.get("issues") or []
 
+    def search_page(self, jql: str, fields: list[str], max_results: int = 50,
+                    page_token: str | None = None) -> tuple[list[dict[str, Any]], str | None]:
+        """One page of an enhanced JQL search: (issues, the next page's token or None)."""
+        body: dict[str, Any] = {"jql": jql, "fields": fields, "maxResults": max_results}
+        if page_token:
+            body["nextPageToken"] = page_token
+        data = self.request("POST", "/rest/api/3/search/jql", json_body=body) or {}
+        token = None if data.get("isLast") else (data.get("nextPageToken") or None)
+        return data.get("issues") or [], token
+
+    def get_issues(self, keys: list[str], fields: list[str]) -> tuple[list[dict[str, Any]], list[str]]:
+        """(issues with these fields, keys Jira does not know) for up to 100 issues."""
+        data = self.request("POST", "/rest/api/3/issue/bulkfetch",
+                            json_body={"issueIdsOrKeys": keys, "fields": fields}) or {}
+        missing = [str(e.get("issueIdOrKey")) for e in data.get("issueErrors") or [] if e.get("issueIdOrKey")]
+        return list(data.get("issues") or []), missing
+
     def create_issue(self, fields: dict[str, Any]) -> dict[str, Any]:
         return self.request("POST", "/rest/api/3/issue", json_body={"fields": fields}) or {}
 
@@ -923,24 +940,86 @@ class _StoryCache:
 
 
 def settings_payload(store: Any, org_id: str) -> dict[str, Any]:
-    """What the Jira settings screen shows. The token is never returned (only its last 4 characters)."""
+    """What the Jira settings screen shows. The token and webhook secret are never returned (only the token's
+    last 4 characters, and whether a webhook secret exists)."""
+    from . import jira_sync
+
     c = store.get_jira_connection(org_id)
     return {"enabled": secrets_box.enabled(), "configured": bool(c),
             "site_url": c["site_url"] if c else "", "email": c["email"] if c else "",
             "project_key": c["project_key"] if c else "", "last4": c["last4"] if c else None,
-            "updated_at": c["updated_at"] if c else None}
+            "updated_at": c["updated_at"] if c else None,
+            "webhook": {"configured": bool(c and c.get("webhook_ciphertext")),
+                        "created_at": c.get("webhook_created_at") if c else None,
+                        "url": jira_sync.webhook_url(org_id)}}
+
+
+# Errors from reaching Jira with an org's stored connection.
+CONNECTION_ERRORS = (JiraError, ValueError, secrets_box.SecretDecryptError, secrets_box.SecretsUnavailable)
+
+
+class JiraBusy(JiraError):
+    """Another push or import for the project is running."""
+
+
+_stories_cache = _StoryCache()
+_locks: dict[str, threading.Lock] = {}
+_locks_guard = threading.Lock()
+
+
+def project_lock(pid: str) -> threading.Lock:
+    """One Jira push or import at a time per project."""
+    with _locks_guard:
+        return _locks.setdefault(pid, threading.Lock())
+
+
+def make_plan(store: Any, pid: str, state: ProjectState, *, org_id: str, ai: bool) -> dict[str, Any]:
+    """The push plan of a branch (AI-written stories are cached per content, so preview and push agree)."""
+    project = store.get_project(pid) or {}
+    m = Model(state)
+    inputs = [story_input(m, r) for r in m.functional]
+    ckey = content_hash([pid, project.get("name"), inputs, ai])
+    cached = _stories_cache.get(ckey)
+    if cached is None:
+        cached = write_stories(m, project.get("name") or pid, use_ai=ai, org_id=org_id)
+        if cached[1] == "llm":
+            _stories_cache.put(ckey, cached)
+    stories, engine = cached
+    return build_plan(state, project_id=pid, project_name=project.get("name") or pid,
+                      links=store.list_external_links(pid), stories=stories, engine=engine, model=m)
+
+
+def push_project(store: Any, conn: dict[str, Any], pid: str, branch: str, get_state: Callable[[], ProjectState], *,
+                 project_key: str, ai: bool, org_id: str, actor: str) -> dict[str, Any]:
+    """Plan and push one branch, then log it. Raises JiraBusy, or one of CONNECTION_ERRORS."""
+    lock = project_lock(pid)
+    if not lock.acquire(blocking=False):
+        raise JiraBusy("A Jira push or import for this project is already running.")
+    try:
+        plan = make_plan(store, pid, get_state(), org_id=org_id, ai=ai)
+        with make_client(conn) as client:
+            out = push(client, plan, store=store, pid=pid, project_key=project_key)
+        c = out["counts"]
+        line = (f"pushed to Jira {out['project_key']}: {c['created']} created, {c['updated']} updated, "
+                f"{c['unchanged']} unchanged, {c['failed']} failed")
+        store.log_activity(pid, branch, actor, [line], get_state().rev)
+        from . import integrations  # imported here: integrations builds on this module
+        integrations.notify(store, org_id, pid, "push", f"{actor} pushed to Jira", line, branch=branch)
+        return {**out, "engine": plan["engine"]}
+    finally:
+        lock.release()
+
+
+def sync_status(store: Any, conn: dict[str, Any], pid: str) -> int:
+    """Pull every linked issue's status now (the fallback when webhooks are not set up)."""
+    with make_client(conn) as client:
+        return refresh_status(client, store, pid)
 
 
 def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Callable[[str, str], ProjectState],
-                    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = None) -> None:
+                    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = None,
+                    commit_ops: Callable[..., Awaitable[Any]] | None = None) -> None:
     read, edit, org_admin = authz.project("read"), authz.project("edit"), authz.org("admin")
-    stories_cache = _StoryCache()
-    locks: dict[str, threading.Lock] = {}
-    locks_guard = threading.Lock()
-
-    def project_lock(pid: str) -> threading.Lock:
-        with locks_guard:
-            return locks.setdefault(pid, threading.Lock())
 
     def connection_or_409(org_id: str) -> dict[str, Any]:
         c = store.get_jira_connection(org_id)
@@ -956,19 +1035,7 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
             raise HTTPException(422, str(exc)) from exc
 
     def plan_for(pid: str, branch: str, body: PlanIn, org_id: str) -> dict[str, Any]:
-        state = state_or_404(pid, branch)
-        project = store.get_project(pid) or {}
-        m = Model(state)
-        inputs = [story_input(m, r) for r in m.functional]
-        ckey = content_hash([pid, project.get("name"), inputs, body.ai])
-        cached = stories_cache.get(ckey)
-        if cached is None:
-            cached = write_stories(m, project.get("name") or pid, use_ai=body.ai, org_id=org_id)
-            if cached[1] == "llm":
-                stories_cache.put(ckey, cached)
-        stories, engine = cached
-        return build_plan(state, project_id=pid, project_name=project.get("name") or pid,
-                          links=store.list_external_links(pid), stories=stories, engine=engine, model=m)
+        return make_plan(store, pid, state_or_404(pid, branch), org_id=org_id, ai=body.ai)
 
     # ---- org connection (admin+) ----
     @app.get("/api/orgs/{org_id}/jira")
@@ -1051,26 +1118,13 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
         key = target_key(body, conn)
 
         def run() -> dict[str, Any]:
-            lock = project_lock(pid)
-            if not lock.acquire(blocking=False):
-                raise HTTPException(409, "A Jira push for this project is already running.")
             try:
-                plan = plan_for(pid, branch, body, a.org_id)
-                try:
-                    with make_client(conn) as client:
-                        out = push(client, plan, store=store, pid=pid, project_key=key)
-                except (JiraError, ValueError, secrets_box.SecretDecryptError) as exc:
-                    raise HTTPException(502, f"Jira push failed: {exc}") from exc
-                c = out["counts"]
-                state = state_or_404(pid, branch)
-                line = (f"pushed to Jira {out['project_key']}: {c['created']} created, {c['updated']} updated, "
-                        f"{c['unchanged']} unchanged, {c['failed']} failed")
-                store.log_activity(pid, branch, a.actor, [line], state.rev)
-                from . import integrations  # imported here: integrations builds on this module
-                integrations.notify(store, a.org_id, pid, "push", f"{a.actor} pushed to Jira", line, branch=branch)
-                return {**out, "engine": plan["engine"]}
-            finally:
-                lock.release()
+                return push_project(store, conn, pid, branch, lambda: state_or_404(pid, branch), project_key=key,
+                                    ai=body.ai, org_id=a.org_id, actor=a.actor)
+            except JiraBusy as exc:
+                raise HTTPException(409, str(exc)) from exc
+            except CONNECTION_ERRORS as exc:
+                raise HTTPException(502, f"Jira push failed: {exc}") from exc
 
         out = await asyncio.to_thread(run)
         if broadcast:
@@ -1085,12 +1139,17 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
 
         def run() -> int:
             try:
-                with make_client(conn) as client:
-                    return refresh_status(client, store, pid)
-            except (JiraError, ValueError, secrets_box.SecretDecryptError) as exc:
+                return sync_status(store, conn, pid)
+            except CONNECTION_ERRORS as exc:
                 raise HTTPException(502, f"Could not read Jira: {exc}") from exc
 
         n = await asyncio.to_thread(run)
         if broadcast:
             await broadcast(pid, branch, {"type": "jira", "actor": a.actor})
         return {"updated": n, "links": store.list_external_links(pid)}
+
+    # ---- two-way sync: webhooks, pulling issues in as requirements (jira_sync.py) ----
+    from . import jira_sync
+
+    jira_sync.register_routes(app, store, authz=authz, commit_ops=commit_ops, broadcast=broadcast,
+                              connection_or_409=connection_or_409)

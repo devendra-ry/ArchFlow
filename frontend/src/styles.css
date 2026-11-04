@@ -1158,3 +1158,31 @@ button.link { background: none; border: none; padding: 0; color: var(--primary);
 
 /* ---- Confluence preview ---- */
 .confluence-preview { width: 100%; height: 360px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+
+/* ---- Jira two-way sync: status chips, pull and live-update tabs ---- */
+.an-jira { display: inline-flex; align-items: center; gap: 4px; margin-top: 5px; max-width: 100%; font-size: 10px; font-family: var(--mono, monospace);
+  padding: 1px 6px; border-radius: 999px; border: 1px solid var(--border); color: var(--text); text-decoration: none; background: var(--node-bg, transparent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; --jira-c: var(--muted); }
+.an-jira:hover { border-color: var(--jira-c); }
+.an-jira-dot, .jira-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--jira-c, var(--muted)); flex: none; display: inline-block; }
+.jira-dot { margin-right: 4px; vertical-align: middle; }
+.an-jira-status { color: var(--muted); font-family: inherit; }
+.an-jira.new, .jira-badge.new, .jira-chip.new { --jira-c: var(--muted); }
+.an-jira.indeterminate, .jira-badge.indeterminate, .jira-chip.indeterminate { --jira-c: var(--primary); }
+.an-jira.done, .jira-badge.done, .jira-chip.done { --jira-c: var(--ok); }
+.jira-chip { font-size: 11px; padding: 0 6px; border-radius: 999px; border: 1px solid var(--jira-c, var(--border)); color: var(--jira-c, var(--muted)); white-space: nowrap; }
+.jira-tabs-row { flex-wrap: wrap; margin-bottom: 8px; }
+.jira-pull .jira-row { padding: 6px 8px; }
+.jira-pull-title { text-align: left; white-space: normal; padding: 0; min-width: 0; }
+.jira-pull-meta { padding: 0 8px 6px 34px; }
+.jira-pick-all { margin-top: 8px; }
+.jira-secret { border: 1px solid var(--warn); border-radius: 8px; padding: 8px 10px; margin: 8px 0; }
+.jira-secret input { min-width: 0; }
+.jira-secret ol { padding-left: 18px; margin: 8px 0; }
+.jira-secret-value { word-break: break-all; }
+.row.wrap { flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .an-jira-status { display: none; }
+  .jira-pull-meta { padding-left: 8px; }
+  .jira-tabs-row .seg-chips { width: 100%; overflow-x: auto; }
+}

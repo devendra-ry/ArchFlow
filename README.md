@@ -148,6 +148,7 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 - **Soft delete** — deleting a requirement moves it to the **Deleted** filter with its component links kept, so **Restore** brings it back intact; deleted requirements are left out of health, traceability, AI context, coding briefs, OpenSpec changes and MCP tools. Admins can **Delete permanently** (the history is kept)
 - **Stale links** — when a requirement changes after a component linked to it last changed, the component gets a ⟳ badge on the canvas and the Inspector lists what changed; **Mark reviewed** confirms the component still fits. Staleness is computed from revision numbers (`stale_links` in the analysis), nothing extra is stored
 - **Import from a document** — upload a PRD, RFP or spec (PDF, Word `.docx`, Markdown, text; up to `ARCHFLOW_INTAKE_MAX_MB`, default 20 MB). The `intake.extract` agent reads long documents in parallel chunks and proposes FRs and NFRs with the section and page they came from, plus assumptions, constraints, open questions and stakeholders; likely duplicates and conflicts with existing requirements (or elsewhere in the document) are flagged with both sources. Review, edit and tick what to keep — nothing is added until you accept. Accepted requirements keep their provenance (file, section, page, import time) and assumptions/constraints/questions can be saved to project memory. Without an AI model, "shall / must / should" sentences and bullets under requirement headings are read instead. Document text is treated as untrusted input, never as instructions
+- **Jira, both ways** (Jira ⇅) — push requirements to Jira, or pick issues from the Jira project that are not linked yet and import them as requirements (with their acceptance criteria and priority, linked to the issue). Each requirement and component shows its Jira key with a To Do / In Progress / Done colour, kept current by a Jira webhook (an admin sets it up in **Live updates**) or **Sync now**
 - **Import from a meeting** (🎙 Meeting) — upload a Teams / Zoom / Google Meet transcript (`.vtt` with voice tags, `.srt`, text or Markdown with "Speaker: text" or "[00:12:05] Speaker: text", Word `.docx`) or a recording (`.mp3`, `.m4a`, `.wav`, `.webm`, `.mp4`; transcribed by the org's speech-to-text model, OpenAI Whisper by default). The `meetings.extract` agent reads the conversation in parallel windows and proposes the requirements people asked for (who said it, when, and whether the room **agreed**, only **proposed** it or **disputed** it), the **decisions** taken (rationale and the alternatives discussed), **action items** (owner, due date), open questions, assumptions, constraints, participants and a summary. Duplicates and conflicts with existing requirements are flagged. Accepting adds the requirements with provenance (`source.type = meeting`, speaker, timestamp), the decisions as **proposed ADRs**, and action items and questions as project memory; the transcript can also go into the knowledge base. Without a model, rules read requirement sentences, "we decided / let's go with", "I'll / can you … by Friday" and real questions (small talk is skipped)
 
 ### 📚 Knowledge Base (RAG)
@@ -228,7 +229,7 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 ### 🤖 MCP for AI Agents
 
 - **Remote MCP server** at `/mcp` (Streamable HTTP) with **OAuth 2.1** (dynamic client registration, PKCE, consent page, rotating refresh tokens, revocation) or personal access tokens
-- Works with **Claude Code, Claude.ai, Claude Desktop, Codex** and other MCP clients; **41 tools**, org-scoped, read-only or read & edit, capped by your role
+- Works with **Claude Code, Claude.ai, Claude Desktop, Codex** and other MCP clients; **48 tools** (incl. Jira push, sync and import), org-scoped, read-only or read & edit, capped by your role
 - Agent edits go through the same pipeline as the canvas and appear live, attributed to "*user* via MCP"
 - Coding loop: **list_tasks → get_task_brief → implement → report_progress** (status and PR link show in the activity)
 
@@ -472,7 +473,7 @@ Any feature calls llm.py
 | **Cloud documentation (MCP)** | Microsoft Learn MCP server, AWS Knowledge MCP server (hosted), AWS Documentation MCP server (local, optional) |
 | **Code analysis** | Public Git repositories (HTTPS), local graphs via `archflow-codegraph`; ~30 languages through tree-sitter |
 | **Observability** | Langfuse (optional LLM tracing) |
-| **Issue tracking** | Jira Cloud: preview, then push requirements as epics (one per owning component), stories with Given/When/Then criteria and story points, sub-tasks from the low-level design and "blocks" links from connections; idempotent re-push, 429 backoff, status read back next to requirements. Admins connect it per organization (API token encrypted); developers push |
+| **Issue tracking** | Jira Cloud, both ways. **Push**: preview, then push requirements as epics (one per owning component), stories with Given/When/Then criteria and story points, sub-tasks from the low-level design and "blocks" links from connections; idempotent re-push, 429 backoff. **Live status**: a Jira webhook (per-org secret, shown once, checked in constant time; Jira's HMAC `X-Hub-Signature` also accepted) updates issue status as it changes, with **Sync now** as the fallback; status chips (To Do / In Progress / Done) show on canvas components and requirements and update live. **Pull**: list the project's issues that are not linked yet (JQL, paginated) and import the chosen ones as requirements (description ADF → text, labels / type → FR or NFR, priority, acceptance criteria parsed from the description; optional `jira.import` AI mapping), linked so they are never imported twice. Admins connect it per organization (API token encrypted); developers push and import. MCP: `jira_push_preview`, `jira_push`, `jira_sync_status`, `jira_list_unlinked_issues`, `jira_import_issues` |
 | **GitHub Issues** | Preview, then push requirements as issues (`REQ-001: …`, description, acceptance criteria as a task list, priority, implementing components, source; labels `archflow`, `priority:<p>`, `requirement` / `nfr:<category>`). Re-pushes update changed issues and skip unchanged ones (content hash), an unrecorded issue is found again by a hidden marker, a removed requirement closes its issue; issue state is read back next to requirements. GitHub Enterprise Server via its `/api/v3` URL |
 | **Confluence** | Publish a branch's architecture specification (the Markdown / PDF export) as a page in a space, optionally under a parent page; re-publishing updates the same page as a new version and skips an unchanged spec. Can reuse the org's Jira credentials on the same Atlassian site |
 | **Slack / Microsoft Teams** | Incoming webhooks (Slack, Teams Workflows) get a short message with a link back when a version is saved, a review is requested or answered, a document or meeting is imported, or the project is pushed to Jira / GitHub / Confluence; each channel chooses its events. Sent in the background (a failing webhook never fails the action; the last error is shown in settings) |
@@ -771,7 +772,7 @@ ArchFlow/
 │   │   ├── collab_sync.py       # API ↔ collab server (field-level patches)
 │   │   ├── users.py · auth.py · authz.py · accounts.py  # Accounts, sessions, roles, orgs, CSRF
 │   │   ├── secrets_box.py       # AES-256-GCM encryption of org secrets
-│   │   ├── mcp_remote.py        # Remote MCP server (OAuth 2.1, 41 tools)
+│   │   ├── mcp_remote.py        # Remote MCP server (OAuth 2.1, 48 tools)
 │   │   ├── mcp_server.py        # Local stdio MCP server
 │   │   ├── store.py             # persistence (one store for SQLite and Postgres)
 │   │   ├── db/                  # SQLAlchemy models, column types, Alembic migrations
@@ -852,8 +853,10 @@ The full production plan is in [docs/production-plan.md](docs/production-plan.md
 
 1. **Per-project role overrides, SSO** and approvals on more objects than versions
 2. **Repository analysis**: GitHub App, drift on every push/PR, PR review comments
-3. **Jira sync** — ✅ push (epics, stories, sub-tasks, links) with dry-run preview and status pull are done; next: Jira
-   webhooks for live status, status shown on canvas components, and pulling new Jira issues back as requirements
+3. **Jira sync** — ✅ done both ways: push (epics, stories, sub-tasks, links) with dry-run preview, live status from Jira
+   webhooks (plus Sync now), status chips on canvas components and requirements, pulling Jira issues back as
+   requirements, and MCP tools for all of it; next: two-way field sync (summary and criteria edited in Jira) and
+   Jira Data Center webhooks
 4. **More diagrams** from the same model: ~~sequence, C4, ER, deployment, data flow~~ (done, with Mermaid / PlantUML export); still to do: agent graph, MCP topology
 5. **Document intake** — ~~SRS/PDF/Word/Markdown → requirements~~ and ~~meeting transcripts and recordings → requirements,
    decisions and action items~~ (done);

@@ -83,7 +83,8 @@ INVITE_COLS = ("id", "org_id", "email", "role", "created_by", "created_at", "exp
 PROJECT_COLS = ("id", "name", "description", "created_at", "org_id")
 EXTERNAL_LINK_COLS = ("object_kind", "object_id", "external_key", "external_url", "content_hash", "status",
                       "status_category", "status_checked_at", "updated_at")
-JIRA_CONNECTION_COLS = ("org_id", "site_url", "email", "ciphertext", "last4", "project_key", "updated_by", "updated_at")
+JIRA_CONNECTION_COLS = ("org_id", "site_url", "email", "ciphertext", "last4", "project_key", "webhook_ciphertext",
+                        "webhook_created_at", "updated_by", "updated_at")
 INTEGRATION_COLS = ("org_id", "kind", "config", "ciphertext", "last4", "updated_by", "updated_at")
 KB_DOCUMENT_COLS = ("id", "project_id", "name", "type", "origin", "chars", "chunks", "embedding_model", "created_by",
                     "created_at")
@@ -404,6 +405,13 @@ class Store:
         with self._s() as s:
             s.execute(delete(OrgJiraConnection).where(OrgJiraConnection.org_id == org_id))
 
+    def set_jira_webhook(self, org_id: str, ciphertext: str) -> bool:
+        """Store (or with "" remove) the org's encrypted Jira webhook secret. False when Jira is not connected."""
+        with self._s() as s:
+            return s.execute(update(OrgJiraConnection).where(OrgJiraConnection.org_id == org_id)
+                             .values(webhook_ciphertext=ciphertext,
+                                     webhook_created_at=now() if ciphertext else None)).rowcount > 0
+
     # ---- org integrations (GitHub, Confluence, Slack, Teams) ------------------------
     def set_integration(self, org_id: str, kind: str, *, config: dict[str, Any], ciphertext: str, last4: str,
                         user_id: str | None) -> None:
@@ -499,6 +507,21 @@ class Store:
             s.execute(update(ExternalLink).where(ExternalLink.project_id == pid, ExternalLink.system == system,
                                                  ExternalLink.external_key == external_key)
                       .values(status=status, status_category=category, status_checked_at=now()))
+
+    def find_external_links_by_key(self, org_id: str, external_key: str, system: str = "jira") -> list[dict[str, Any]]:
+        """Every object linked to this issue key in the org's projects (a webhook names the issue, not the project)."""
+        with self._s() as s:
+            rows = s.execute(select(ExternalLink.project_id, ExternalLink.object_kind, ExternalLink.object_id)
+                             .join(Project, Project.id == ExternalLink.project_id)
+                             .where(Project.org_id == org_id, ExternalLink.system == system,
+                                    ExternalLink.external_key == external_key)
+                             .order_by(ExternalLink.project_id, ExternalLink.object_kind, ExternalLink.object_id))
+            return [{"project_id": p, "object_kind": k, "object_id": o} for p, k, o in rows]
+
+    def delete_external_links_by_key(self, pid: str, external_key: str, system: str = "jira") -> int:
+        with self._s() as s:
+            return s.execute(delete(ExternalLink).where(ExternalLink.project_id == pid, ExternalLink.system == system,
+                                                        ExternalLink.external_key == external_key)).rowcount
 
     def delete_external_link(self, pid: str, object_kind: str, object_id: str, system: str = "jira") -> None:
         with self._s() as s:
