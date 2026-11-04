@@ -113,9 +113,10 @@ def cookie_kwargs() -> dict:
     return {"httponly": True, "samesite": "lax", "secure": cookie_secure(), "path": "/", "max_age": SESSION_TTL}
 
 
-def create_session(store, user_id: str, user_agent: str = "") -> str:
+def create_session(store, user_id: str, user_agent: str = "", auth_method: str = "password") -> str:
+    """``auth_method``: "password" or "sso:<org_id>" (orgs that require SSO check it, see authz.py)."""
     token = new_session_token()
-    store.create_session(session_hash(token), user_id, time.time() + SESSION_TTL, user_agent)
+    store.create_session(session_hash(token), user_id, time.time() + SESSION_TTL, user_agent, auth_method)
     return token
 
 
@@ -133,7 +134,7 @@ def resolve_session(store, token: str | None) -> dict | None:
     now = time.time()
     if sess["expires_at"] - now < SESSION_TTL - SESSION_REFRESH_AFTER:
         store.extend_session(h, now + SESSION_TTL)
-    return user
+    return {**user, "auth_method": sess.get("auth_method") or "password"}
 
 
 # --------------------------------------------------------------------------- login rate limiting

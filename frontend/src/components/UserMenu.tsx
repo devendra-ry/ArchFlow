@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Me, Role, User } from "../types";
+import { MfaDialog } from "./SecurityDialogs";
 
 interface Props {
   me: Me;
@@ -13,6 +14,7 @@ interface Props {
 /** Avatar button with account details, cursor colour and sign out. */
 export function UserMenu({ me, user, colors, onColor, onLogout, role }: Props) {
   const [open, setOpen] = useState(false);
+  const [mfaOpen, setMfaOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -43,9 +45,13 @@ export function UserMenu({ me, user, colors, onColor, onLogout, role }: Props) {
               </div>
             </div>
           )}
+          <button role="menuitem" onClick={() => { setOpen(false); setMfaOpen(true); }}>
+            Two-step sign-in{me.security ? (me.security.mfa_enabled ? " · on" : " · off") : ""}
+          </button>
           <button role="menuitem" onClick={onLogout}>Sign out</button>
         </div>
       )}
+      {mfaOpen && <MfaDialog onClose={() => setMfaOpen(false)} />}
     </div>
   );
 }

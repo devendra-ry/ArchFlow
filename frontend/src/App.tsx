@@ -3,6 +3,7 @@ import { UNAUTHORIZED_EVENT, api } from "./api";
 import { AuthScreen } from "./components/AuthScreen";
 import { Landing } from "./components/Landing";
 import { ProjectPicker } from "./components/ProjectPicker";
+import { MfaRequiredScreen } from "./components/SecurityDialogs";
 import { Workspace } from "./components/Workspace";
 import { ThemeToggle, useTheme } from "./theme";
 import { lastBranch } from "./recent";
@@ -24,7 +25,7 @@ function initialColor(): string {
 
 type Route =
   | { kind: "project"; pid: string; branch: string }
-  | { kind: "login" | "signup" | "home" }
+  | { kind: "login" | "signup" | "home"; mfa?: string; ssoError?: string }
   | { kind: "invite"; token: string };
 
 function readRoute(): Route {
@@ -33,7 +34,11 @@ function readRoute(): Route {
   if (m) return { kind: "project", pid: m[1], branch: decodeURIComponent(m[2] ?? "main") };
   m = h.match(/^#\/invite\/([A-Za-z0-9_\-]+)$/);
   if (m) return { kind: "invite", token: m[1] };
-  if (h === "#/login") return { kind: "login" };
+  m = h.match(/^#\/login(?:\?(.*))?$/);
+  if (m) { // the SSO callback adds ?mfa=<challenge> or ?sso_error=<message>
+    const q = new URLSearchParams(m[1] ?? "");
+    return { kind: "login", mfa: q.get("mfa") ?? undefined, ssoError: q.get("sso_error") ?? undefined };
+  }
   if (h === "#/signup") return { kind: "signup" };
   return { kind: "home" };
 }
@@ -94,9 +99,15 @@ export default function App() {
     }
     return (
       <AuthScreen mode={authMode} invite={route.kind === "invite" ? route.token : null} themeToggle={themeToggle}
+        mfaToken={route.kind === "login" ? route.mfa : null} ssoError={route.kind === "login" ? route.ssoError : null}
         onMode={(m) => { setAuthMode(m); if (route.kind !== "invite") location.hash = `#/${m}`; }}
         onSignedIn={(m) => { setMe(m); if (route.kind !== "project") location.hash = ""; }} />
     );
+  }
+
+  // An organization requires two-step sign-in and this account has not turned it on yet.
+  if (me.security?.mfa_required && !me.security.mfa_enabled) {
+    return <MfaRequiredScreen onDone={refreshMe} onLogout={logout} themeToggle={themeToggle} />;
   }
 
   const user: User = { name: me.user.name, color };

@@ -31,6 +31,7 @@ import { CostDialog } from "./CostDialog";
 import { ComplianceDialog } from "./ComplianceDialog";
 import { ConfluenceDialog, GitHubDialog } from "./IntegrationsDialog";
 import { ConnectDialog } from "./ConnectDialog";
+import { ProjectAccessDialog } from "./SecurityDialogs";
 import { ExportDialog } from "./ExportDialog";
 import { DiagramsDialog } from "./DiagramsDialog";
 import { DecisionsPanel } from "./DecisionsPanel";
@@ -115,6 +116,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const [focusThread, setFocusThread] = useState<string | null>(null);
   const [notifKey, setNotifKey] = useState(0);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
   // Latest server event about a conversation, for the design chat (the assistant hook gets it directly).
   const [designRemote, setDesignRemote] = useState<{ id: string; at: number } | null>(null);
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
@@ -826,6 +828,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
               )}
               <button role="menuitem" onClick={() => { setToolsOpen(false); setConnectOpen(true); }}>
                 <b>⌘ Connect AI agents</b><span className="muted tiny">Claude, Codex and others over MCP</span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setAccessOpen(true); }}>
+                <b>⚿ Project access</b><span className="muted tiny">{can(role, "admin") ? "Give people a different role on this project" : "Who can do what on this project"}</span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); toggleCanvasFull(); }}>
                 <b>⛶ Full-screen canvas</b><span className="muted tiny">Shortcut: F</span></button>
               <div className="tools-sep" />
@@ -1070,6 +1074,11 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       )}
       {confluenceOpen && confluence && (
         <ConfluenceDialog pid={pid} branch={branch} space={confluence.space_key ?? ""} onClose={() => setConfluenceOpen(false)} />
+      )}
+      {accessOpen && (
+        <ProjectAccessDialog pid={pid} projectName={project?.name ?? "this project"} selfId={me.user.id}
+          onClose={() => setAccessOpen(false)}
+          onChanged={() => { api.project(pid, branch).then((p) => setRole(p.role)).catch(() => {}); }} />
       )}
       {connectOpen && project && (
         <ConnectDialog orgId={project.org_id ?? "org-default"} canManage={can(role, "admin")} onClose={() => setConnectOpen(false)} />

@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from . import (accounts, ai, approvals, openspec_service, diagram_export, auth, catalog, chat, collab_sync, comments, conversations,
                decisions, lld, llm, history, intake, observability, review, secrets_box, suggestions, usage, users, exports, diagrams, jira,
-               costs, integrations, knowledge, meetings, scale, compliance)
+               costs, integrations, knowledge, meetings, scale, compliance, mfa, project_roles, sso)
 from .analysis import full_analysis, trace_requirement
 from .codegraph.service import CodeGraphService
 from .codegraph.service import register_routes as register_codegraph_routes
@@ -290,6 +290,10 @@ def create_app(store: Store | None = None) -> FastAPI:
 
     # ---- accounts, orgs, members, invites, org AI settings ----
     accounts.register_routes(app, store, authz)
+    # ---- two-step sign-in, OIDC single sign-on, per-project roles (mfa.py, sso.py, project_roles.py) ----
+    mfa.register_routes(app, store, authz)
+    sso.register_routes(app, store, authz)
+    project_roles.register_routes(app, store, authz)
     usage.register_routes(app, store, authz, budgets)
     observability.install(store)
     observability.register_routes(app, store, authz)
@@ -300,7 +304,8 @@ def create_app(store: Store | None = None) -> FastAPI:
         if org_id:
             authz.check_org(user, org_id, "read")
             return store.list_projects(org_id)
-        out = [p for o in store.list_user_orgs(user["id"]) for p in store.list_projects(o["id"])]
+        out = [p for o in store.list_user_orgs(user["id"]) if not authz.policy_block(user, o["id"], o["role"])
+               for p in store.list_projects(o["id"])]
         return sorted(out, key=lambda p: p["created_at"], reverse=True)
 
     @app.post("/api/projects", status_code=201)
@@ -783,9 +788,12 @@ def create_app(store: Store | None = None) -> FastAPI:
         if not user:
             await ws.close(code=4401)
             return
-        project = store.get_project(pid)
-        if (not project or store.get_role(project["org_id"], user["id"]) is None
-                or store.get_state(pid, branch) is None):
+        try:
+            authz.check_project(user, pid, "read")
+        except HTTPException:
+            await ws.close(code=4404)
+            return
+        if store.get_state(pid, branch) is None:
             await ws.close(code=4404)
             return
         await ws.accept()
@@ -831,19 +839,38 @@ def create_app(store: Store | None = None) -> FastAPI:
         email = users.normalize_email(str(form.get("email", "")))[:320]
         password = str(form.get("password", ""))[:users.MAX_PASSWORD]
         nxt = safe_next(str(form.get("next", "")))
+        mfa_token = str(form.get("mfa_token", ""))[:200]
+        if mfa_token:  # second step: the code from the authenticator app (or a recovery code)
+            challenge = mfa.peek_challenge(store, mfa_token)
+            if not challenge:
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "This sign-in has expired. Sign in again."), 401)
+            try:
+                ok = mfa.check_code(store, challenge["user_id"], str(form.get("code", ""))[:40])
+            except HTTPException as exc:
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), str(exc.detail), mfa_token=mfa_token), 429)
+            if not ok or not mfa.finish_challenge(store, mfa_token):
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "That code is not right.", mfa_token=mfa_token), 401)
+            user_id, method = challenge["user_id"], challenge["auth_method"]
+        else:
+            user_id, method = None, "password"
         key = users.limiter_key(email, accounts.client_ip(request))
         if users.login_limiter.check(key):
             return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(),
                                                 "Too many sign-in attempts. Try again later.", email), 429)
-        rec = store.get_user_by_email(email, with_hash=True)
-        if not users.verify_password(password, rec["password_hash"] if rec else None):
-            users.login_limiter.failure(key)
-            return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "Invalid email or password.", email), 401)
-        users.login_limiter.success(key)
-        store.touch_login(rec["id"])
+        if user_id is None:
+            rec = store.get_user_by_email(email, with_hash=True)
+            if not users.verify_password(password, rec["password_hash"] if rec else None):
+                users.login_limiter.failure(key)
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "Invalid email or password.", email), 401)
+            users.login_limiter.success(key)
+            user_id = rec["id"]
+            if store.mfa_enabled(user_id):
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(),
+                                                    mfa_token=mfa.start_challenge(store, user_id, "password")))
+        store.touch_login(user_id)
         resp: Response = (RedirectResponse(nxt, status_code=303) if nxt else
                           HTMLResponse("<p>Signed in. You can close this window and return to your app.</p>"))
-        accounts.set_session_cookie(resp, users.create_session(store, rec["id"], request.headers.get("user-agent", "")))
+        accounts.set_session_cookie(resp, users.create_session(store, user_id, request.headers.get("user-agent", ""), method))
         return resp
 
     @app.get("/oauth/consent", response_class=HTMLResponse)
@@ -854,7 +881,8 @@ def create_app(store: Store | None = None) -> FastAPI:
         user = authz.session_user(request)
         if not user:
             return to_login(request_id)
-        return HTMLResponse(auth.consent_page(req, request_id, store.list_user_orgs(user["id"]), user, WRITE_ROLES))
+        orgs = [o for o in store.list_user_orgs(user["id"]) if not authz.policy_block(user, o["id"], o["role"])]
+        return HTMLResponse(auth.consent_page(req, request_id, orgs, user, WRITE_ROLES))
 
     @app.post("/oauth/consent")
     async def consent_submit(req: Request):
@@ -868,7 +896,7 @@ def create_app(store: Store | None = None) -> FastAPI:
             if not user:
                 return to_login(request_id)
             role = store.get_role(org_id, user["id"])
-            if role is None:
+            if role is None or authz.policy_block(user, org_id, role):  # the org's SSO / MFA rules apply here too
                 pending = provider.pending_request(request_id)
                 if not pending:
                     return HTMLResponse("<p>This authorization request has expired.</p>", 400)

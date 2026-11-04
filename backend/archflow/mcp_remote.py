@@ -73,13 +73,26 @@ class Principal:
         self.role = role
         self.user: str = account.get("name") or claims.get("user_name") or "agent"
         self.client: str = tok.client_id
-        self.scopes = set(tok.scopes) & set(authz.role_scopes(role))
+        self.token_scopes = set(tok.scopes)
+        self.org_role = role
+        self._needs_write = False
+        self.scopes = self.token_scopes & set(authz.role_scopes(role))
+
+    def for_project(self, store, project_id: str) -> None:
+        """Apply the user's role override on this project, if any (see project_roles.py). Writing still needs a
+        token that was granted edit access."""
+        role = authz.effective_role(self.org_role, store.get_project_role(project_id, self.user_id))
+        self.role = role
+        self.scopes = self.token_scopes & set(authz.role_scopes(role))
+        if self._needs_write:
+            self.require_write()
 
     @property
     def actor(self) -> str:
         return f"{self.user} via MCP"
 
     def require_write(self):
+        self._needs_write = True  # re-checked when a project's role override applies
         if auth.SCOPE_WRITE not in self.scopes:
             raise ToolError("This connection is read-only. Reconnect with edit access to change the architecture.")
 
@@ -115,6 +128,7 @@ def build_remote_mcp(services: Services) -> MCPServer:
         project = store.get_project(project_id)
         if not project or project.get("org_id") != p.org_id:
             raise ToolError(f"Project '{project_id}' not found in your organization")
+        p.for_project(store, project_id)
         state = store.get_state(project_id, branch)
         if state is None:
             raise ToolError(f"Branch '{branch}' not found")

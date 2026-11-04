@@ -60,6 +60,8 @@ class UserSession(Base):
     expires_at: Mapped[float] = mapped_column(Double, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # How this session signed in: "password", or "sso:<org_id>" (an org that requires SSO checks it, see authz.py)
+    auth_method: Mapped[str] = mapped_column(Text, nullable=False, default="password", server_default="password")
 
 
 class Membership(Base):
@@ -562,3 +564,44 @@ class ComplianceEvidence(Base):
     note: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     updated_by: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+# --------------------------------------------------------------------------- SSO, MFA and project roles (sso.py, mfa.py)
+class OrgAuthSettings(Base):
+    """An org's sign-in rules: OIDC single sign-on (client secret encrypted like the AI keys) and require-MFA."""
+    __tablename__ = "org_auth_settings"
+    org_id: Mapped[str] = mapped_column(Text, _fk("orgs.id"), primary_key=True)
+    sso_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    issuer: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    client_id: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")  # client secret
+    last4: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    domains: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list, server_default="[]")
+    default_role: Mapped[str] = mapped_column(Text, nullable=False, default="developer", server_default="developer")
+    require_sso: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    require_mfa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+class UserMfa(Base):
+    """A user's TOTP factor (secret encrypted with secrets_box) and hashed one-time recovery codes."""
+    __tablename__ = "user_mfa"
+    user_id: Mapped[str] = mapped_column(Text, _fk("users.id"), primary_key=True)
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    recovery_hashes: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list, server_default="[]")
+    last_step: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")  # replay guard
+    created_at: Mapped[str] = created()
+    enabled_at: Mapped[str | None] = mapped_column(UTCDateTime)
+
+
+class ProjectRole(Base):
+    """A member's role on one project, replacing their org role there (viewer / reviewer / developer / admin)."""
+    __tablename__ = "project_roles"
+    __table_args__ = (Index("idx_project_roles_user", "user_id"),)
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(Text, _fk("users.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    granted_by: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[str] = created()
