@@ -457,4 +457,6 @@ def test_ready_endpoint_reports_the_schema():
 
     with TestClient(create_app(Store(":memory:"))) as c:
         r = c.get("/api/ready")
-        assert r.status_code == 200 and r.json() == {"ready": True, "database": "sqlite", "schema": "0007", "expected": "0007"}
+        body = r.json()
+        assert r.status_code == 200 and {k: body[k] for k in ("ready", "database", "schema", "expected")} == {"ready": True, "database": "sqlite", "schema": "0007", "expected": "0007"}
+        assert "redis" in body  # reported, never required
