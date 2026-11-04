@@ -32,7 +32,8 @@ from .db import migrate
 from .db.models import (Activity, AITrace, AIUsage, ApiToken, Approval, Base, Branch, CodeGraph, Comment, Conversation, ConversationMessage,
                         Decision, Invite, Membership, Notification, OAuthClient, OAuthCode, OpenSpecChange, OpenSpecFile, Org, OrgAIBudget,
                         OrgApprovalPolicy, OrgAIConfig, OrgAIKey, Project, ProjectMemory, RequirementRevision, User, UserSession, Version,
-                        YDoc, ExternalLink, OrgJiraConnection, KbChunk, KbDocument, OrgIntegration)
+                        YDoc, ExternalLink, OrgJiraConnection, KbChunk, KbDocument, OrgIntegration,
+                        ComplianceEvidence, ComplianceSettings)
 from .db.types import now
 from .models import ProjectState
 
@@ -86,6 +87,7 @@ EXTERNAL_LINK_COLS = ("object_kind", "object_id", "external_key", "external_url"
 JIRA_CONNECTION_COLS = ("org_id", "site_url", "email", "ciphertext", "last4", "project_key", "webhook_ciphertext",
                         "webhook_created_at", "updated_by", "updated_at")
 INTEGRATION_COLS = ("org_id", "kind", "config", "ciphertext", "last4", "updated_by", "updated_at")
+COMPLIANCE_EVIDENCE_COLS = ("framework", "control_id", "status", "note", "updated_by", "updated_at")
 KB_DOCUMENT_COLS = ("id", "project_id", "name", "type", "origin", "chars", "chunks", "embedding_model", "created_by",
                     "created_at")
 KB_CHUNK_COLS = ("id", "document_id", "ord", "section", "page", "locator", "text", "embedding")
@@ -483,6 +485,39 @@ class Store:
             for cid, vec in vectors.items():
                 s.execute(update(KbChunk).where(KbChunk.id == cid, KbChunk.document_id == did).values(embedding=vec))
             s.execute(update(KbDocument).where(KbDocument.id == did).values(embedding_model=model))
+
+    # ---- compliance frameworks (settings and evidence per control) -----------------
+    def get_compliance_settings(self, pid: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            c = s.get(ComplianceSettings, pid)
+            return c.to_dict("frameworks", "updated_by", "updated_at") if c else None
+
+    def set_compliance_settings(self, pid: str, frameworks: list[str], user: str | None) -> dict[str, Any]:
+        with self._s() as s:
+            self._upsert(s, ComplianceSettings, {"project_id": pid, "frameworks": list(frameworks), "updated_by": user,
+                                                 "updated_at": now()}, ["project_id"])
+        return self.get_compliance_settings(pid)
+
+    def list_compliance_evidence(self, pid: str) -> list[dict[str, Any]]:
+        with self._s() as s:
+            rows = s.scalars(select(ComplianceEvidence).where(ComplianceEvidence.project_id == pid)
+                             .order_by(ComplianceEvidence.framework, ComplianceEvidence.control_id))
+            return [x.to_dict(*COMPLIANCE_EVIDENCE_COLS) for x in rows]
+
+    def set_compliance_evidence(self, pid: str, framework: str, control_id: str, *, status: str, note: str,
+                                user: str | None) -> dict[str, Any]:
+        with self._s() as s:
+            self._upsert(s, ComplianceEvidence, {"project_id": pid, "framework": framework, "control_id": control_id,
+                                                 "status": status, "note": note, "updated_by": user, "updated_at": now()},
+                         ["project_id", "framework", "control_id"])
+            row = s.get(ComplianceEvidence, (pid, framework, control_id))
+            return row.to_dict(*COMPLIANCE_EVIDENCE_COLS)
+
+    def delete_compliance_evidence(self, pid: str, framework: str, control_id: str) -> bool:
+        with self._s() as s:
+            return s.execute(delete(ComplianceEvidence).where(
+                ComplianceEvidence.project_id == pid, ComplianceEvidence.framework == framework,
+                ComplianceEvidence.control_id == control_id)).rowcount > 0
 
     # ---- links to external trackers (Jira issues) ---------------------------------
     def list_external_links(self, pid: str, system: str = "jira") -> list[dict[str, Any]]:

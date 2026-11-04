@@ -28,6 +28,7 @@ import type { AppNotification, Comment, ExternalLinks, JiraLink, JiraLinks, Memb
 import { JiraDialog } from "./JiraDialog";
 import { KnowledgeDialog } from "./KnowledgeDialog";
 import { CostDialog } from "./CostDialog";
+import { ComplianceDialog } from "./ComplianceDialog";
 import { ConfluenceDialog, GitHubDialog } from "./IntegrationsDialog";
 import { ConnectDialog } from "./ConnectDialog";
 import { ExportDialog } from "./ExportDialog";
@@ -144,6 +145,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [kbVersion, setKbVersion] = useState(0);
   const [costsOpen, setCostsOpen] = useState(false);
+  // null = never opened; false = closed but kept mounted (so "Show on canvas" and reopening keep the view)
+  const [complianceOpen, setComplianceOpen] = useState<boolean | null>(null);
   const [githubOpen, setGithubOpen] = useState(false);
   const [confluenceOpen, setConfluenceOpen] = useState(false);
   const [github, setGithub] = useState<ExternalLinks | null>(null);
@@ -811,6 +814,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
                 <b>❖ Knowledge base</b><span className="muted tiny">Ask and search the project documents and meetings, with citations</span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setCostsOpen(true); }}>
                 <b>$ Cost estimate</b><span className="muted tiny">Monthly cost of this architecture, line by line, and ways to save</span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setComplianceOpen(true); }}>
+                <b>✓ Compliance</b><span className="muted tiny">SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001 checks on this design</span></button>
               {confluence?.connected && can(role, "edit") && (
                 <button role="menuitem" onClick={() => { setToolsOpen(false); setConfluenceOpen(true); }}>
                   <b>⇪ Publish to Confluence</b><span className="muted tiny">The architecture spec as a page in {confluence.space_key}</span></button>
@@ -1047,6 +1052,18 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       {costsOpen && (
         <CostDialog pid={pid} branch={branch} aiAvailable={!!ai?.available} rev={state?.rev ?? 0} onClose={() => setCostsOpen(false)}
           onSelect={(id) => { setCostsOpen(false); focusNodes([id]); }} />
+      )}
+      {complianceOpen !== null && (
+        <ComplianceDialog pid={pid} branch={branch} rev={state?.rev ?? 0} open={complianceOpen} canEdit={can(role, "edit")}
+          aiAvailable={!!ai?.available} toast={toast} onClose={() => setComplianceOpen(false)}
+          names={Object.fromEntries(Object.values(state?.nodes ?? {}).map((n) => [n.id, n.name]))}
+          onShow={(ids) => { const known = ids.filter((id) => state?.nodes[id]); if (known.length) { setComplianceOpen(false); focusNodes(known); } }}
+          onAddRequirement={(p) => {
+            send([{ op: "add_requirement", requirement: { title: p.title, description: p.description, kind: "non_functional",
+              category: p.category, priority: p.priority, acceptance_criteria: p.acceptance_criteria,
+              source: { type: "compliance", ref: p.controls.join(", ") } } }]);
+            toast(`Added requirement: ${p.title}`);
+          }} />
       )}
       {githubOpen && github && (
         <GitHubDialog pid={pid} branch={branch} repo={github.repo ?? ""} onClose={() => setGithubOpen(false)} onChanged={loadGithub} />

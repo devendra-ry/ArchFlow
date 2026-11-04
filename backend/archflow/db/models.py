@@ -540,3 +540,25 @@ class OrgIntegration(Base):
     last4: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
     updated_by: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+# --------------------------------------------------------------------------- compliance frameworks
+class ComplianceSettings(Base):
+    """Which compliance frameworks (soc2, hipaa, gdpr, pci, iso27001) apply to a project."""
+    __tablename__ = "compliance_settings"
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), primary_key=True)
+    frameworks: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list, server_default="[]")
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+class ComplianceEvidence(Base):
+    """A person's evidence or note on one control: "met" (by process), "not_applicable", or a note only ("")."""
+    __tablename__ = "compliance_evidence"
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), primary_key=True)
+    framework: Mapped[str] = mapped_column(Text, primary_key=True)
+    control_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)

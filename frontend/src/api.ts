@@ -8,6 +8,7 @@ import type { OpenSpecChange, OpenSpecJob, OpenSpecOverview } from "./types";
 import type { ApprovalPolicy, VersionReview } from "./types";
 import type { AIUsageReport, AiSuggestion, AiTrace, AiTraceList, PromptInfo, ReviewResult, SuggestionMode } from "./types";
 import type { JiraImportResult, JiraIssuePage, JiraLinks, JiraPlan, JiraPushResult, JiraSettings, JiraTestResult, JiraWebhookSetup } from "./types";
+import type { ComplianceRemediation, ComplianceReport } from "./types";
 import type { ConfluencePublish, CostEstimate, ExternalLinks, GitHubPlan, GitHubPushResult, IntegrationKind, IntegrationSettings } from "./types";
 import type { KbAnswer, KbDocument, KbPassage, KbStatus, MeetingDecision, MeetingResult, MeetingStep } from "./types";
 
@@ -414,6 +415,28 @@ export const api = {
   costs: (pid: string, branch: string, assumptions: Record<string, unknown>, ai = true) =>
     call<CostEstimate>("POST", `/projects/${pid}/costs`, { assumptions, ai }, b(branch)),
   costsCsv: (pid: string, branch: string) => download(`/projects/${pid}/costs.csv`, { branch }, "costs.csv"),
+
+  // ---- compliance frameworks (report: viewers; frameworks and evidence: developers and up) ----
+  compliance: (pid: string, branch: string, frameworks: string[] = []) =>
+    call<ComplianceReport>("GET", `/projects/${pid}/compliance`, undefined, { branch, frameworks: frameworks.join(",") }),
+  saveComplianceFrameworks: (pid: string, frameworks: string[]) =>
+    call<{ frameworks: string[] }>("PUT", `/projects/${pid}/compliance/settings`, { frameworks }),
+  setComplianceEvidence: (pid: string, framework: string, control_id: string, status: "" | "met" | "not_applicable", note: string) =>
+    call<unknown>("PUT", `/projects/${pid}/compliance/evidence`, { framework, control_id, status, note }),
+  complianceReview: (pid: string, branch: string, frameworks: string[], ai: boolean) =>
+    call<ComplianceRemediation>("POST", `/projects/${pid}/compliance/review`, { frameworks, ai }, b(branch)),
+  complianceExport: (pid: string, branch: string, format: "md" | "json", frameworks: string[]) =>
+    download(`/projects/${pid}/compliance.${format}`, { branch, frameworks: frameworks.join(",") }, `compliance.${format}`),
+  /** The print-ready report as HTML text, to open in a new tab and print to PDF. */
+  compliancePrintHtml: async (pid: string, branch: string, frameworks: string[]): Promise<string> => {
+    const res = await fetch(`/api/projects/${pid}/compliance.html?${new URLSearchParams({ branch, frameworks: frameworks.join(","), inline: "true" })}`,
+      { credentials: "include" });
+    if (!res.ok) {
+      if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+      throw new ApiError(res.status, await res.json().catch(() => null));
+    }
+    return res.text();
+  },
 
   // ---- integrations (settings: admins; GitHub push and Confluence publish: developers and up) ----
   integrations: (org: string) => call<IntegrationSettings>("GET", `/orgs/${org}/integrations`),
