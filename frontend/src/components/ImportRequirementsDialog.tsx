@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
+import { Select, plainOptions } from "./Select";
 import type { IntakeMatch, IntakeNote, IntakeProposal, IntakeResult, IntakeStep, MemoryCategory } from "../types";
 
 interface Props {
@@ -194,13 +195,11 @@ export function ImportRequirementsDialog({ pid, branch, onDone, onClose }: Props
                         <textarea rows={3} value={p.description} onChange={(e) => patch(p.id, { description: e.target.value })} /></label>
                       <div className="grid2">
                         <label className="small">Kind
-                          <select value={p.kind} onChange={(e) => patch(p.id, { kind: e.target.value as IntakeProposal["kind"] })}>
-                            <option value="functional">functional</option><option value="non_functional">non_functional</option>
-                          </select></label>
+                          <Select size="sm" value={p.kind} aria-label="Kind" onChange={(v) => patch(p.id, { kind: v })}
+                            options={plainOptions(["functional", "non_functional"] as const)} /></label>
                         <label className="small">Priority
-                          <select value={p.priority} onChange={(e) => patch(p.id, { priority: e.target.value as IntakeProposal["priority"] })}>
-                            {PRIORITY.map((x) => <option key={x}>{x}</option>)}
-                          </select></label>
+                          <Select size="sm" value={p.priority} aria-label="Priority" onChange={(v) => patch(p.id, { priority: v })}
+                            options={plainOptions(PRIORITY)} /></label>
                         {p.kind === "non_functional" && (
                           <label className="small">Category
                             <input value={p.category} onChange={(e) => patch(p.id, { category: e.target.value })} /></label>

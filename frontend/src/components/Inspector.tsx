@@ -2,6 +2,7 @@ import { activeRequirements, NODE_TYPES, type Catalog, type Op, type ProjectStat
 import { JiraBadge } from "./RequirementsPanel";
 import { VENDOR_STYLE } from "./Palette";
 import { Field } from "./Field";
+import { Select } from "./Select";
 import { TYPE_META } from "./ArchNode";
 import { LldViews } from "./LldViews";
 import { codeUrl } from "./CodeDialog";
@@ -94,16 +95,14 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
                 {n.vendor && VENDOR_STYLE[n.vendor] && <span className="vbadge" style={{ ["--vc" as string]: VENDOR_STYLE[n.vendor].color, marginLeft: 6 }}>{VENDOR_STYLE[n.vendor].short}</span>}
               </span>
               {alts.length > 0 && (
-                <select value="" aria-label="Swap for an equivalent service" onChange={(e) => {
-                  const alt = catalog!.items.find((c) => c.id === e.target.value);
+                <Select value="" aria-label="Swap for an equivalent service" placeholder="⇄ Swap for an equivalent…" menuWidth={260}
+                  options={alts.map((a) => ({ value: a.id, label: a.name, hint: catalog!.vendors[a.vendor] }))} onChange={(id) => {
+                  const alt = catalog!.items.find((c) => c.id === id);
                   if (!alt) return;
                   const changes: Record<string, unknown> = { technology: alt.name, vendor: alt.vendor, catalog_id: alt.id };
                   if (n.name === entry.name || n.name === n.technology) changes.name = alt.name;
                   send([{ op: "update_node", id: n.id, changes }]);
-                }}>
-                  <option value="">Swap for an equivalent…</option>
-                  {alts.map((a) => <option key={a.id} value={a.id}>{a.name} ({catalog!.vendors[a.vendor]})</option>)}
-                </select>
+                }} />
               )}
             </label>
           );

@@ -60,7 +60,8 @@ test("decisions: compare two drafts, record the decision and adopt it into main"
   await expect(dialog.locator(".compare-card")).toHaveCount(2);
 
   // Priorities re-rank the options live
-  await dialog.locator(".prio-row").filter({ hasText: "Performance" }).locator("select").selectOption({ label: "Critical" });
+  await dialog.locator(".prio-row").filter({ hasText: "Performance" }).getByRole("combobox").click();
+  await page.getByRole("option", { name: "Critical", exact: true }).click();
   const record = dialog.getByRole("button", { name: /Record decision: adopt/ });
   const chosen = (await record.textContent())!.replace(/.*adopt\s+/, "").trim();
   await record.click();

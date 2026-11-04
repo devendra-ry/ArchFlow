@@ -141,7 +141,8 @@ test("branch merge: merge a draft branch into main from the History panel", asyn
   await page.getByRole("button", { name: /Branches/ }).click();
   await page.locator(".branch-list li").filter({ hasText: "draft/cache" }).getByRole("button", { name: "Merge into…" }).click();
   const dialog = page.getByRole("dialog", { name: "Merge branches" });
-  await dialog.getByLabel("Target branch").selectOption("main");
+  await dialog.getByRole("combobox", { name: "Target branch" }).click();
+  await page.getByRole("listbox", { name: "Target branch" }).getByRole("option", { name: "main", exact: true }).click();
   await expect(dialog.locator(".merge-changes")).toContainText("Cart Cache");
   await dialog.getByRole("button", { name: "Merge into main" }).click();
   await expect(dialog).toHaveCount(0);

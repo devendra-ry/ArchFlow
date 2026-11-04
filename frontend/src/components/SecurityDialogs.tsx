@@ -3,6 +3,7 @@ import { api } from "../api";
 import { ROLES, type AuthSettings, type MfaStatus, type ProjectRole, type ProjectRoles, type Role } from "../types";
 import { Copy } from "./ConnectDialog";
 import { Modal } from "./OrgDialogs";
+import { Select } from "./Select";
 
 const PROJECT_ROLE_LABEL: Record<ProjectRole, string> = {
   viewer: "Viewer", reviewer: "Reviewer", developer: "Editor", admin: "Admin",
@@ -194,10 +195,9 @@ export function SignInSettingsDialog({ orgId, orgName, role, onClose }: { orgId:
               <input placeholder="acme.com, acme.io" value={domains} onChange={(e) => setDomains(e.target.value)} />
             </label>
             <label className="field"><span>Role for people who sign in for the first time</span>
-              <select value={defaultRole} onChange={(e) => setDefaultRole(e.target.value as Role)}>
-                {ROLES.filter((r) => r !== "owner" && (r !== "admin" || role === "owner" || s.sso.default_role === "admin"))
-                  .map((r) => <option key={r} value={r}>{r}</option>)}
-              </select>
+              <Select value={defaultRole} onChange={(v) => setDefaultRole(v as Role)} aria-label="Default role"
+                options={ROLES.filter((r) => r !== "owner" && (r !== "admin" || role === "owner" || s.sso.default_role === "admin"))
+                  .map((r) => ({ value: r, label: r }))} />
             </label>
             <label className="small row gap">
               <input type="checkbox" checked={requireSso} disabled={!enabled} onChange={(e) => setRequireSso(e.target.checked)} />
@@ -255,10 +255,10 @@ export function ProjectAccessDialog({ pid, projectName, selfId, onClose, onChang
                         {m.project_role ? PROJECT_ROLE_LABEL[m.project_role] : m.org_role === "owner" ? "owner (always)" : "same as organization"}
                       </span>
                     ) : (
-                      <select value={m.project_role ?? ""} aria-label={`Project role of ${m.name}`} onChange={(e) => change(m.user_id, e.target.value)}>
-                        <option value="">Same as organization</option>
-                        {data.roles.map((r) => <option key={r} value={r}>{PROJECT_ROLE_LABEL[r]}</option>)}
-                      </select>
+                      <Select value={m.project_role ?? ""} aria-label={`Project role of ${m.name}`} size="sm"
+                        onChange={(v) => change(m.user_id, v)}
+                        options={[{ value: "", label: "Same as organization" },
+                          ...data.roles.map((r) => ({ value: r as string, label: PROJECT_ROLE_LABEL[r] }))]} />
                     )}
                   </td>
                 </tr>

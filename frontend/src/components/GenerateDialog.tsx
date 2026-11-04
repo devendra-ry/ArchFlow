@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { GenerationKind, GenerationResult, GenerationTarget } from "../types";
 import { useEscape } from "../useEscape";
 import { Copy } from "./ConnectDialog";
+import { Select } from "./Select";
 
 interface Props {
   pid: string;
@@ -102,10 +103,10 @@ export function GenerateDialog({ pid, branch, aiAvailable, canEdit, toast, onClo
         <div className="row gap wrap gen-options">
           {target === "terraform" && (
             <label className="small">Cloud{" "}
-              <select value={cloud} disabled={busy} onChange={(e) => { setCloud(e.target.value); run(kind, target, false, e.target.value); }}>
-                <option value="">From the design{result?.cloud && !cloud ? ` (${result.cloud.toUpperCase()})` : ""}</option>
-                <option value="aws">AWS</option><option value="azure">Azure</option><option value="gcp">Google Cloud</option>
-              </select>
+              <Select value={cloud} disabled={busy} aria-label="Cloud" size="sm"
+                onChange={(v) => { setCloud(v); run(kind, target, false, v); }}
+                options={[{ value: "", label: `From the design${result?.cloud && !cloud ? ` (${result.cloud.toUpperCase()})` : ""}` },
+                  { value: "aws", label: "AWS" }, { value: "azure", label: "Azure" }, { value: "gcp", label: "Google Cloud" }]} />
             </label>
           )}
           <label className="small" title={aiTip}>

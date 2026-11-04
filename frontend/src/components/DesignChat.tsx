@@ -5,6 +5,7 @@ import type {
 } from "../types";
 import { useAiSuggestions } from "../aiSuggestions";
 import { TYPE_META } from "./ArchNode";
+import { Select } from "./Select";
 
 interface Props {
   pid: string;
@@ -225,15 +226,12 @@ export function DesignChat({ pid, branch, user, canvasEmpty, aiAvailable, onAppl
       )}
       {threads.length > 0 && (
         <div className="dc-bar">
-          <select value={conv?.id ?? ""} disabled={busy} aria-label="Design chats"
-            onChange={(e) => open(e.target.value || null).catch((err) => setError((err as Error).message))}>
-            <option value="">+ New design chat</option>
-            {threads.map((t) => (
-              <option key={t.id} value={t.id}>
-                {(t.title || "Untitled").slice(0, 48)} · {t.branch}{t.created_by !== user.name ? ` · ${t.created_by}` : ""}
-              </option>
-            ))}
-          </select>
+          <Select value={conv?.id ?? ""} disabled={busy} aria-label="Design chats"
+            onChange={(v) => open(v || null).catch((err) => setError((err as Error).message))}
+            options={[{ value: "", label: "+ New design chat" }, ...threads.map((t) => ({
+              value: t.id, label: (t.title || "Untitled").slice(0, 48),
+              hint: `${t.branch}${t.created_by !== user.name ? ` · ${t.created_by}` : ""}`,
+            }))]} />
         </div>
       )}
       <div className="dc-list" ref={listRef}>

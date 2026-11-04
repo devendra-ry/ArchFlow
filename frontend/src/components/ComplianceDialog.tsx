@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
+import { Select } from "./Select";
 import type { ComplianceControl, ComplianceEffective, ComplianceProposal, ComplianceRemediation, ComplianceReport } from "../types";
 
 interface Props {
@@ -265,11 +266,9 @@ function ControlRow({ c, framework, pid, canEdit, open, onToggle, onShow, onSave
           {canEdit ? (
             <div className="cmp-evidence">
               <label className="small">Evidence
-                <select value={status} onChange={(e) => setStatus(e.target.value as typeof status)}>
-                  <option value="">Use the design check</option>
-                  <option value="met">Met by process</option>
-                  <option value="not_applicable">Not applicable</option>
-                </select>
+                <Select value={status} onChange={(v) => setStatus(v as typeof status)} aria-label="Evidence"
+                  options={[{ value: "", label: "Use the design check" }, { value: "met", label: "Met by process" },
+                    { value: "not_applicable", label: "Not applicable" }]} />
               </label>
               <textarea rows={2} placeholder="Note: a policy, a ticket or how this is met" value={note} maxLength={2000}
                 onChange={(e) => setNote(e.target.value)} aria-label="Evidence note" />

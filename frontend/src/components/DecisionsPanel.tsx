@@ -3,6 +3,7 @@ import { api } from "../api";
 import { can, type Branch, type Decision, type DecisionAlternative, type DecisionStatus, type Evaluation, type Role, type User } from "../types";
 import { useEscape } from "../useEscape";
 import { Markdown } from "./Markdown";
+import { Select, plainOptions } from "./Select";
 
 interface Props {
   pid: string;
@@ -276,9 +277,9 @@ function CompareDialog({ pid, branches, user, onClose, onRecorded, toast }: Comp
                   {result.criteria.map((c) => (
                     <label key={c} className="prio-row small">
                       <span>{label(result, c)}</span>
-                      <select value={weights[c] ?? 1} onChange={(e) => setWeights((w) => ({ ...w, [c]: Number(e.target.value) }))}>
-                        {PRIORITIES.map((p) => <option key={p.id} value={p.weight}>{p.label}</option>)}
-                      </select>
+                      <Select size="sm" value={String(weights[c] ?? 1)} aria-label={`Priority of ${label(result, c)}`}
+                        onChange={(v) => setWeights((w) => ({ ...w, [c]: Number(v) }))}
+                        options={PRIORITIES.map((p) => ({ value: String(p.weight), label: p.label }))} />
                     </label>
                   ))}
                 </div>
@@ -465,9 +466,8 @@ function DecisionDetail({ pid, decision: d, branches, user, role, toast, onBack,
       <div className="adr-form">
         <label className="field"><span>Title</span><input value={form.title} onChange={set("title")} disabled={!canEdit} /></label>
         <label className="field"><span>Status</span>
-          <select value={form.status} onChange={set("status")} disabled={!canReview}>
-            {STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
-          </select>
+          <Select value={form.status} aria-label="Status" disabled={!canReview} options={plainOptions(STATUSES)}
+            onChange={(v) => setForm((f) => ({ ...f, status: v }))} />
         </label>
         <label className="field"><span>Context</span><textarea rows={3} value={form.context} onChange={set("context")} disabled={!canEdit} /></label>
         <label className="field"><span>Decision</span><textarea rows={3} value={form.decision} onChange={set("decision")} disabled={!canEdit} /></label>
