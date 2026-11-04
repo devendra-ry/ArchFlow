@@ -6,6 +6,7 @@ import { AISettingsDialog, AIUsageDialog, JiraSettingsDialog, MembersDialog } fr
 import { IntegrationsDialog } from "./IntegrationsDialog";
 import { TracesDialog } from "./TracesDialog";
 import { UserMenu } from "./UserMenu";
+import { Select } from "./Select";
 
 interface Props {
   me: Me;
@@ -134,9 +135,8 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
       <header className="home-bar">
         <div className="home-brand"><span className="logo">▲</span> ArchFlow</div>
         {orgs.length > 0 && (
-          <select className="home-org" value={orgId} onChange={(e) => setOrgId(e.target.value)} aria-label="Organization">
-            {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
+          <Select className="home-org" value={orgId} onChange={setOrgId} aria-label="Organization"
+            options={orgs.map((o) => ({ value: o.id, label: o.name }))} />
         )}
         <input ref={searchRef} className="home-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
           placeholder="Search all projects…   /" aria-label="Search projects" />
@@ -193,9 +193,8 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
             <div className="row between">
               <h2>{q ? `Results for “${query}”` : org ? `Projects in ${org.name}` : "Projects"}
                 <span className="count">{shown.length}</span></h2>
-              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort projects" className="home-sort">
-                <option value="recent">Recently opened</option><option value="name">Name</option><option value="created">Newest</option>
-              </select>
+              <Select size="sm" value={sort} onChange={setSort} aria-label="Sort projects" className="home-sort"
+                options={[{ value: "recent", label: "Recently opened" }, { value: "name", label: "Name" }, { value: "created", label: "Newest" }]} />
             </div>
             {org && !can(role, "edit") && !q && <p className="muted small">You have {role} access in {org.name}: you can open and review projects, not change them.</p>}
             {projects === null && !q && <p className="muted small">Loading…</p>}

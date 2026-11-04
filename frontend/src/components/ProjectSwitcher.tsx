@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { getRecent, lastBranch, pruneRecent, timeAgo } from "../recent";
 import { can, type Me, type Project } from "../types";
+import { Select } from "./Select";
 
 interface Props {
   me: Me;
@@ -53,7 +54,10 @@ export function ProjectSwitcher({ me, current, open, onOpenChange, onOpen, onHom
   // Close on a click outside.
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => { if (!wrapRef.current?.contains(e.target as Node)) onOpenChange(false); };
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Element;
+      if (!wrapRef.current?.contains(t) && !t.closest?.("[data-af-popover]")) onOpenChange(false); // a Select list is portaled out
+    };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, [open, onOpenChange]);
@@ -141,13 +145,11 @@ export function ProjectSwitcher({ me, current, open, onOpenChange, onOpen, onHom
                 onChange={(e) => setCreating({ ...creating, name: e.target.value })} aria-label="Project name" />
               <div className="row gap">
                 {editableOrgs.length > 1 && (
-                  <select value={creating.orgId} onChange={(e) => setCreating({ ...creating, orgId: e.target.value })} aria-label="Organization">
-                    {editableOrgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-                  </select>
+                  <Select value={creating.orgId} onChange={(v) => setCreating({ ...creating, orgId: v })} aria-label="Organization"
+                    options={editableOrgs.map((o) => ({ value: o.id, label: o.name }))} />
                 )}
-                <select value={creating.template} onChange={(e) => setCreating({ ...creating, template: e.target.value })} aria-label="Template">
-                  {(templates.length ? templates : [{ key: "blank", name: "Blank" }]).map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
-                </select>
+                <Select value={creating.template} onChange={(v) => setCreating({ ...creating, template: v })} aria-label="Template"
+                  options={(templates.length ? templates : [{ key: "blank", name: "Blank" }]).map((t) => ({ value: t.key, label: t.name }))} />
               </div>
               <div className="row gap end">
                 <button type="button" className="small" onClick={() => setCreating(null)}>Back</button>

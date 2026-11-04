@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
+import { Select } from "./Select";
 import type { CostAssumptionKey, CostEstimate } from "../types";
 
 interface Props {
@@ -95,10 +96,9 @@ export function CostDialog({ pid, branch, aiAvailable, rev, onClose, onSelect }:
                   </label>
                 ))}
                 <label className="small">Region
-                  <select value={String(val("region"))} onChange={(e) => set("region", e.target.value)}>
-                    <option value="us">US</option><option value="eu">EU</option><option value="uk">UK</option>
-                    <option value="asia">Asia</option><option value="other">Other</option>
-                  </select></label>
+                  <Select value={String(val("region"))} onChange={(v) => set("region", v)} aria-label="Region"
+                    options={[{ value: "us", label: "US" }, { value: "eu", label: "EU" }, { value: "uk", label: "UK" },
+                      { value: "asia", label: "Asia" }, { value: "other", label: "Other" }]} /></label>
                 <label className="small row gap"><input type="checkbox" checked={Boolean(val("include_staging"))}
                   onChange={(e) => set("include_staging", e.target.checked)} /> Include a staging environment</label>
               </div>

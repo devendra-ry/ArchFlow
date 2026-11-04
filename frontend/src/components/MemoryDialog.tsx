@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
+import { Select, plainOptions } from "./Select";
 import { MEMORY_CATEGORIES, type MemoryCategory, type MemoryItem } from "../types";
 
 interface Props {
@@ -61,9 +62,7 @@ export function MemoryDialog({ pid, branch, items, readOnly, onChanged, onClose 
           <form className="mem-add" onSubmit={add}>
             <input value={text} maxLength={240} onChange={(e) => setText(e.target.value)}
               placeholder="e.g. “All customer data stays in the EU”, “Team knows Go, not Java”, “Budget under $2k/month”" />
-            <select value={category} onChange={(e) => setCategory(e.target.value as MemoryCategory)} aria-label="Category">
-              {MEMORY_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
+            <Select value={category} onChange={setCategory} aria-label="Category" options={plainOptions(MEMORY_CATEGORIES)} />
             <label className="row gap small"><input type="checkbox" checked={pinned} onChange={(e) => setPinned(e.target.checked)} /> Pin</label>
             <button className="primary" disabled={!text.trim() || busy}>Remember</button>
           </form>
@@ -84,9 +83,8 @@ export function MemoryDialog({ pid, branch, items, readOnly, onChanged, onClose 
                 }}>
                   <input autoFocus value={editing.text} maxLength={240} onChange={(e) => setEditing({ ...editing, text: e.target.value })}
                     onKeyDown={(e) => { if (e.key === "Escape") { e.preventDefault(); setEditing(null); } }} aria-label="Fact" />
-                  <select value={editing.category} onChange={(e) => setEditing({ ...editing, category: e.target.value as MemoryCategory })} aria-label="Category">
-                    {MEMORY_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
-                  </select>
+                  <Select size="sm" value={editing.category} onChange={(v) => setEditing({ ...editing, category: v })} aria-label="Category"
+                    options={plainOptions(MEMORY_CATEGORIES)} />
                   <button className="small primary" disabled={!editing.text.trim() || busy}>Save</button>
                   <button type="button" className="small" onClick={() => setEditing(null)}>Cancel</button>
                 </form>

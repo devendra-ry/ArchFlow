@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import { OpenSpecPanel } from "./OpenSpecPanel";
+import { Select } from "./Select";
 
 type Mode = "openspec" | "brief";
 
@@ -72,9 +73,8 @@ export function PromptDialog({ pid, branch, nodeIds, requirementIds, readOnly, o
           <>
             <p className="muted small vibe-help">A one-file implementation brief built instantly from the design. Paste it into your coding agent.</p>
             <div className="row gap">
-              <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Coding agent">
-                {targets.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
-              </select>
+              <Select value={target} onChange={setTarget} aria-label="Coding agent"
+                options={targets.map((t) => ({ value: t.key, label: t.name }))} />
               <input className="grow" placeholder="Extra instructions (optional)" value={extra} onChange={(e) => setExtra(e.target.value)} />
             </div>
             <pre className="prompt-out">{brief}</pre>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, ApiError } from "../api";
+import { Select } from "./Select";
 import type { Branch, MergeChoice, MergeConflict, MergePreview, MergeResult, MergeSuggestion } from "../types";
 
 interface Props {
@@ -117,6 +118,7 @@ export function MergeDialog({ pid, branches, source: initialSource, target: init
     if (b.how === "branch-point") return `from v${b.version}, where ${source} was created`;
     return "with no shared history: everything that differs is compared directly";
   }, [preview, source]);
+  const branchOptions = branches.map((b) => ({ value: b.name, label: b.name, icon: "⎇" }));
 
   return (
     <div className="modal-backdrop" onClick={() => !applying && onClose()}>
@@ -127,14 +129,10 @@ export function MergeDialog({ pid, branches, source: initialSource, target: init
         </div>
         <div className="row gap wrap merge-pick">
           <label className="small">Merge
-            <select value={source} onChange={(e) => setSource(e.target.value)} aria-label="Source branch">
-              {branches.map((b) => <option key={b.name} value={b.name}>⎇ {b.name}</option>)}
-            </select>
+            <Select value={source} onChange={setSource} aria-label="Source branch" options={branchOptions} />
           </label>
           <label className="small">into
-            <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Target branch">
-              {branches.map((b) => <option key={b.name} value={b.name}>⎇ {b.name}</option>)}
-            </select>
+            <Select value={target} onChange={setTarget} aria-label="Target branch" options={branchOptions} />
           </label>
           {preview && <span className="muted small">Three-way diff {baseLabel}.</span>}
         </div>

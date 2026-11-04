@@ -1,4 +1,4 @@
-import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
+import { Handle, NodeToolbar, Position, type NodeProps, type Node } from "@xyflow/react";
 import { memo } from "react";
 import { brandIcon } from "../brandIcons";
 import type { ArchNode as ArchNodeModel, NodeType } from "../types";
@@ -44,12 +44,14 @@ export interface ArchNodeData extends Record<string, unknown> {
   requirementIds?: string[]; // linked requirements to show (soft-deleted ones left out); default: all links
   stale?: string[]; // linked requirements that changed after this component did
   onComments?: () => void;
+  onOpenInternals?: () => void; // open this component's internal (LLD) diagram
+  onRemove?: () => void; // left out when the canvas is read-only
 }
 
 export type ArchFlowNode = Node<ArchNodeData, "arch">;
 
-function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
-  const { model, dimmed, highlighted, diff, remote, issues, childCount, comments, onComments, stale } = data;
+function ArchNodeView({ data, selected, dragging }: NodeProps<ArchFlowNode>) {
+  const { model, dimmed, highlighted, diff, remote, issues, childCount, comments, onComments, stale, onOpenInternals, onRemove } = data;
   const reqIds = data.requirementIds ?? model.requirement_ids;
   const meta = TYPE_META[model.type] ?? TYPE_META.service;
   const logo = brandIcon(model.technology, model.name);
@@ -65,37 +67,60 @@ function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
     );
   }
 
+  const subtitle = model.type === "event" && model.props?.channel ? `on ${model.props.channel}`
+    : model.type !== "table" && model.type !== "event" ? model.technology : "";
   return (
     <div className={cls} style={{ ["--accent" as string]: meta.color, ...(ring ? { boxShadow: `0 0 0 2px ${ring}` } : {}) }}>
+      {(onOpenInternals || onRemove) && (
+        <NodeToolbar isVisible={selected && !dragging} position={Position.Top} offset={8} className="node-toolbar">
+          {onOpenInternals && (
+            <button onClick={onOpenInternals} title="Open the internal design (double-click)">
+              <span aria-hidden>↘</span> {childCount ? `Internals (${childCount})` : "Design internals"}</button>
+          )}
+          {onComments && <button onClick={onComments} title="Read the comments on this component"><span aria-hidden>💬</span> Comments</button>}
+          {onRemove && <button className="danger" onClick={onRemove} title="Delete (Del)" aria-label={`Delete ${model.name}`}><span aria-hidden>✕</span></button>}
+        </NodeToolbar>
+      )}
       <Handle type="target" position={Position.Top} />
       <Handle type="target" position={Position.Left} id="l" />
       <div className="an-head">
-        {logo ? (
-          <svg className={`an-logo ${logo.dark ? "dark-mark" : ""}`} viewBox="0 0 24 24" role="img" aria-label={logo.title}
-            style={{ ["--brand" as string]: logo.hex }}><title>{logo.title}</title><path d={logo.path} /></svg>
-        ) : <span className="an-glyph" aria-hidden>{meta.glyph}</span>}
-        <span className="an-type">{meta.label}</span>
-        {model.vendor && VENDOR_STYLE[model.vendor] && (
-          <span className="vbadge" style={{ ["--vc" as string]: VENDOR_STYLE[model.vendor].color }}>{VENDOR_STYLE[model.vendor].short}</span>
-        )}
-        {!!issues && <span className="an-issues" title={`${issues} issue(s)`}>{issues}</span>}
-        {!!stale?.length && (
-          <span className="an-stale" title={`Requirement${stale.length > 1 ? "s" : ""} changed since this component: ${stale.join(", ")}. Review it in Properties.`}>
-            ⟳ {stale.length}</span>
-        )}
-        {!!comments && (
-          <button className="an-comments nodrag" title={`${comments} open comment thread(s) · click to read`} aria-label={`${comments} open comments`}
-            onClick={(e) => { e.stopPropagation(); onComments?.(); }} onDoubleClick={(e) => e.stopPropagation()}>💬 {comments}</button>
-        )}
-        {!!childCount && <span className="an-children" title={`${childCount} internal element(s) · double-click to open`}>↘ {childCount}</span>}
-      </div>
-      {model.type === "endpoint" ? (
-        <div className="an-endpoint">
-          <span className={`http-m m-${(model.props?.method || "GET").toLowerCase()}`}>{(model.props?.method || model.name.split(" ")[0] || "GET").toUpperCase()}</span>
-          <span className="mono">{model.props?.path || model.name.split(" ").slice(1).join(" ") || "/"}</span>
+        <span className="an-icon" aria-hidden={!logo}>
+          {logo ? (
+            <svg className={`an-logo ${logo.dark ? "dark-mark" : ""}`} viewBox="0 0 24 24" role="img" aria-label={logo.title}
+              style={{ ["--brand" as string]: logo.hex }}><title>{logo.title}</title><path d={logo.path} /></svg>
+          ) : <span className="an-glyph">{meta.glyph}</span>}
+        </span>
+        <div className="an-titles">
+          {model.type === "endpoint" ? (
+            <div className="an-endpoint">
+              <span className={`http-m m-${(model.props?.method || "GET").toLowerCase()}`}>{(model.props?.method || model.name.split(" ")[0] || "GET").toUpperCase()}</span>
+              <span className="mono">{model.props?.path || model.name.split(" ").slice(1).join(" ") || "/"}</span>
+            </div>
+          ) : (
+            <div className="an-name">{model.name}</div>
+          )}
+          <div className="an-sub">
+            <span className="an-type">{meta.label}</span>
+            {subtitle && <span className="an-tech">{subtitle}</span>}
+          </div>
         </div>
-      ) : (
-        <div className="an-name">{model.name}</div>
+      </div>
+      {(model.vendor && VENDOR_STYLE[model.vendor] || !!issues || !!stale?.length || !!comments || !!childCount) && (
+        <div className="an-badges">
+          {model.vendor && VENDOR_STYLE[model.vendor] && (
+            <span className="vbadge" style={{ ["--vc" as string]: VENDOR_STYLE[model.vendor].color }}>{VENDOR_STYLE[model.vendor].short}</span>
+          )}
+          {!!issues && <span className="an-issues" title={`${issues} issue(s)`}>⚠ {issues}</span>}
+          {!!stale?.length && (
+            <span className="an-stale" title={`Requirement${stale.length > 1 ? "s" : ""} changed since this component: ${stale.join(", ")}. Review it in Properties.`}>
+              ⟳ {stale.length}</span>
+          )}
+          {!!comments && (
+            <button className="an-comments nodrag" title={`${comments} open comment thread(s) · click to read`} aria-label={`${comments} open comments`}
+              onClick={(e) => { e.stopPropagation(); onComments?.(); }} onDoubleClick={(e) => e.stopPropagation()}>💬 {comments}</button>
+          )}
+          {!!childCount && <span className="an-children" title={`${childCount} internal element(s) · double-click to open`}>↘ {childCount}</span>}
+        </div>
       )}
       {model.type === "table" && (() => {
         const cols = parseColumns(model.props?.columns);
@@ -106,8 +131,6 @@ function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
           </ul>
         );
       })()}
-      {model.type === "event" && model.props?.channel && <div className="an-tech">on {model.props.channel}</div>}
-      {model.technology && model.type !== "table" && model.type !== "event" && <div className="an-tech">{model.technology}</div>}
       {reqIds.length > 0 && (
         <div className="an-reqs">
           {reqIds.slice(0, 4).map((r) => <span key={r} className={`chip ${stale?.includes(r) ? "stale" : ""}`}>{r}</span>)}
