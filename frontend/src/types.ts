@@ -613,3 +613,30 @@ export interface JiraPushResult {
   counts: { created: number; updated: number; unchanged: number; failed: number };
   results: { ref: string; type: string; summary: string; action: string; status: "ok" | "skipped" | "error"; key: string; url: string; error: string }[];
 }
+
+// ---- compliance frameworks ----
+export type ComplianceStatus = "pass" | "fail" | "needs_evidence" | "not_applicable";
+export type ComplianceEffective = ComplianceStatus | "met";
+export interface ComplianceEvidence { status: "" | "met" | "not_applicable"; note: string; updated_by: string | null; updated_at: string }
+export interface ComplianceControl {
+  id: string; title: string; description: string; checks: string[]; status: ComplianceStatus; effective: ComplianceEffective;
+  evidence: ComplianceEvidence | null; summary: string; components: string[]; component_names: string[];
+  requirements: string[]; fixes: string[];
+}
+export interface ComplianceFramework {
+  id: string; name: string; version: string; description: string; score: number | null;
+  counts: Record<"pass" | "met" | "needs_evidence" | "fail" | "not_applicable", number>; controls: ComplianceControl[];
+}
+export interface ComplianceProposal {
+  key: string; title: string; description: string; kind: "non_functional"; category: string;
+  priority: "low" | "medium" | "high" | "critical"; acceptance_criteria: string[]; controls: string[];
+}
+export interface ComplianceReport {
+  branch: string; saved: boolean; selected: string[]; suggested: string[];
+  available: { id: string; name: string; version: string; description: string }[];
+  frameworks: ComplianceFramework[]; proposals: ComplianceProposal[]; disclaimer: string;
+}
+export interface ComplianceRemediation {
+  summary: string; engine: "llm" | "offline"; questions: string[]; requirements: ComplianceProposal[];
+  steps: { controls: string[]; title: string; detail: string; components: string[]; effort: "low" | "medium" | "high" }[];
+}

@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from . import (accounts, ai, approvals, openspec_service, diagram_export, auth, catalog, chat, collab_sync, comments, conversations,
                decisions, lld, llm, history, intake, observability, review, secrets_box, suggestions, usage, users, exports, diagrams, jira,
-               costs, integrations, knowledge, meetings)
+               costs, integrations, knowledge, meetings, compliance)
 from .analysis import full_analysis, trace_requirement
 from .codegraph.service import CodeGraphService
 from .codegraph.service import register_routes as register_codegraph_routes
@@ -670,6 +670,8 @@ def create_app(store: Store | None = None) -> FastAPI:
     knowledge.register_routes(app, store, authz=authz, broadcast=broadcast_room)
     # ---- cost estimate of the architecture (costs.py) ----
     costs.register_routes(app, store, authz=authz, state_or_404=state_or_404)
+    # ---- compliance frameworks: SOC 2, HIPAA, GDPR, PCI DSS, ISO 27001 (compliance.py) ----
+    compliance.register_routes(app, store, authz=authz, state_or_404=state_or_404)
     # ---- GitHub Issues, Confluence, Slack and Teams (integrations.py) ----
     integrations.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room)
     # ---- spec exports (Markdown, print/PDF, JSON, YAML) and coding-agent guides (exports.py) ----

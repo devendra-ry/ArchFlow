@@ -37,6 +37,7 @@ EXPECT_KEYS = {  # what each suite's runner checks; a typo would otherwise silen
                         "has_open_questions", "speakers", "agreement"},
     "knowledge": TEXT | {"answerable", "cites", "quotes_verbatim"},
     "costs": TEXT | {"min_recommendations", "targets_any", "within_budget_first"},
+    "compliance": TEXT | {"min_steps", "min_requirements", "targets_any", "controls_any"},
 }
 CASE_KEYS = {
     "compare": {"alternatives"},
@@ -54,6 +55,7 @@ CASE_KEYS = {
     "meetings": {"transcript"},
     "knowledge": {"documents", "question"},
     "costs": {"assumptions"},
+    "compliance": {"frameworks", "memory"},
 }
 
 

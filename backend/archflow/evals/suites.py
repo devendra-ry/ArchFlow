@@ -7,7 +7,8 @@ A case is a dict from a dataset YAML. Shared keys:
     ragas: [faithfulness | answer_accuracy | technically_sound | grounded_in_project, ...]   optional
 The intake suite also takes ``document: {filename, text}``: the uploaded file's name and (text) content; the meetings
 suite takes ``transcript: {filename, text}``, the knowledge suite ``documents: [{filename, text}]`` and a ``question``,
-and the costs suite ``assumptions`` (workload overrides).
+and the costs suite ``assumptions`` (workload overrides); the compliance suite takes ``frameworks`` (ids) and
+``memory`` (project memory texts).
 
 The ``adversarial`` suite runs another suite's agent (``target: ask | command | design | review | ...``) on
 red-team input (prompt injection in requirements or pasted documents, requests for the system prompt, attempts
@@ -24,7 +25,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .. import (ai, chat, costs, evaluation, intake, knowledge, lld, meetings, merge, review, suggestions, exports,
+from .. import (ai, chat, compliance, costs, evaluation, intake, knowledge, lld, meetings, merge, review, suggestions, exports,
                diagrams, jira)
 from ..analysis import full_analysis
 from ..models import LLD_TYPES, ProjectState
@@ -495,6 +496,43 @@ def run_costs(case: dict[str, Any], org_id: str | None) -> Outcome:
                    raw=recs)
 
 
+def run_compliance(case: dict[str, Any], org_id: str | None) -> Outcome:
+    state = build(case.get("project"))
+    memory = [{"id": f"mem-{i}", "text": t} for i, t in enumerate(case.get("memory") or [])]
+    rep = compliance.report(state, frameworks=case.get("frameworks") or ["soc2"], memory=memory)
+    out = compliance.remediate(rep, state, "Eval project", org_id, memory=memory, use_ai=True)
+    exp = case.get("expect") or {}
+    open_refs = {f"{fw['name']} {c['id']}" for fw in rep["frameworks"] for c in fw["controls"]
+                 if c["effective"] in ("fail", "needs_evidence")}
+    names = {nid: n.name for nid, n in state.nodes.items()}
+    targeted = {names[c] for s in out["steps"] for c in s["components"] if c in names}
+    checks: list[Check] = [("engine is llm", out["engine"] == "llm", out["engine"]),
+                           (f"at least {exp.get('min_steps', 1)} step(s)", len(out["steps"]) >= exp.get("min_steps", 1),
+                            str(len(out["steps"]))),
+                           ("every step closes an open control",
+                            all(s["controls"] and set(s["controls"]) <= open_refs for s in out["steps"]), "")]
+    if "min_requirements" in exp:
+        checks.append((f"at least {exp['min_requirements']} proposed requirement(s)",
+                       len(out["requirements"]) >= exp["min_requirements"], str(len(out["requirements"]))))
+    if exp.get("targets_any"):
+        hit = [c for c in exp["targets_any"] if c in targeted]
+        checks.append((f"targets one of {exp['targets_any']}", bool(hit), ", ".join(hit)))
+    if exp.get("controls_any"):
+        covered = {c for s in out["steps"] for c in s["controls"]}
+        hit = [c for c in exp["controls_any"] if c in covered]
+        checks.append((f"addresses one of {exp['controls_any']}", bool(hit), ", ".join(hit)))
+    text = "\n".join([out["summary"]]
+                     + [f"- {s['title']} ({', '.join(s['controls'])}; {', '.join(names.get(c, c) for c in s['components'])}): "
+                        f"{s['detail']}" for s in out["steps"]]
+                     + [f"- NFR: {r['title']}: {r['description']} {' '.join(r['acceptance_criteria'])}"
+                        for r in out["requirements"]])
+    checks += _text_checks(text, exp)
+    findings = [{"control": f"{fw['name']} {c['id']}", "status": c["effective"], "found": c["summary"]}
+                for fw in rep["frameworks"] for c in fw["controls"] if c["effective"] in ("fail", "needs_evidence")]
+    return Outcome(response=text, checks=checks, question="How should this architecture close its compliance gaps?",
+                   contexts=[json.dumps(findings)], raw=out)
+
+
 SUITES: dict[str, tuple[Callable[[dict[str, Any], str | None], Outcome], list[str]]] = {
     # suite: (runner, prompt ids it exercises)
     "compare": (run_compare, ["compare.evaluate"]),
@@ -513,4 +551,5 @@ SUITES: dict[str, tuple[Callable[[dict[str, Any], str | None], Outcome], list[st
     "meetings": (run_meetings, ["meetings.extract"]),
     "knowledge": (run_knowledge, ["kb.answer"]),
     "costs": (run_costs, ["costs.optimize"]),
+    "compliance": (run_compliance, ["compliance.review"]),
 }

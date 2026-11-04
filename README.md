@@ -167,6 +167,14 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 - **Ways to save** — the `costs.optimize` agent writes recommendations grounded in the line items (components named, saving capped at what they cost, trade-offs against the NFRs); without a model, rules suggest the standard ones (commitments for steady instances, serverless for low traffic, a CDN for heavy egress, model routing for LLM-heavy designs). **CSV** download for spreadsheets
 - Prices are indicative on-demand list prices built into `costs.PRICES` (`ARCHFLOW_COST_PRICES` overrides any of them) — for comparing options and finding the big lines, not a quote. REST: `POST /api/projects/{id}/costs`, `GET …/costs.csv`
 
+### ✅ Compliance Frameworks
+
+- **Tools → Compliance** — **SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001** controls that a design can show or break, checked against the branch: encryption in transit (protocols on connections, or a stated TLS / mTLS policy) and at rest, secrets and key management, authentication at every entry point, role-based access, MFA, a gateway and a WAF in front of public services, network segmentation of data stores, audit logging, monitoring, backups and failover, data classification of stores (`data_classification` property), data residency ("all personal data stays in the EU"), retention, deletion on request (event logs need crypto-shredding), third-party agreements (DPA / BAA), card data kept off your systems, and guardrails in front of LLMs
+- Each control is **pass**, **fail**, **needs evidence** or **not applicable**, with what was found, the components and requirements involved, and a fix. Requirements, project memory and accepted decisions count as statements. A **score** per framework; **Show on canvas** highlights a control's components
+- **Evidence** — editors mark a control *met by process* or *not applicable* with a note (kept per project); viewers can read. The frameworks that apply are saved per project (suggested from the project text until then)
+- **Fix plan** — the `compliance.review` agent writes steps grounded in the open controls and proposes NFRs; **Add as requirement** puts one into the requirements list. Without a model, the checks' own fixes and requirement stubs are used
+- **Report** as Markdown, JSON or print-ready HTML (Save as PDF). A design check, not an audit or certification. REST: `GET /api/projects/{id}/compliance?branch=&frameworks=`, `PUT …/compliance/settings`, `PUT …/compliance/evidence`, `POST …/compliance/review`, `GET …/compliance.md|.json|.html`
+
 ---
 
 ### 🩺 Health & Validation
@@ -822,6 +830,8 @@ The full production plan is in [docs/production-plan.md](docs/production-plan.md
    next: speaker diarization for uploaded recordings and live meeting capture
 6. **Generation** of tests, infrastructure as code and documentation (SRS/BRD/runbooks)
 7. **Scale-out** — shared Redis for rate limits, jobs and real-time fan-out across API instances
+8. **Compliance** — ~~SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001 design checks, evidence and fix plans~~ (done); next:
+   evidence file uploads, compliance trend per version, and checks against deployed cloud configuration
 
 ---
 
