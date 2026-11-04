@@ -1,7 +1,7 @@
 """Compliance frameworks: the frameworks that apply to a project and people's evidence / notes per control
 
-Revision ID: 0007
-Revises: 0006
+Revision ID: 0008
+Revises: 0007
 Create Date: 2026-11-04 10:00:00.000000
 """
 
@@ -13,8 +13,8 @@ from sqlalchemy.dialects import postgresql
 
 import archflow.db.types
 
-revision = '0007'
-down_revision = '0006'
+revision = '0008'
+down_revision = '0007'
 branch_labels = None
 depends_on = None
 
