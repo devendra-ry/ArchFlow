@@ -33,8 +33,16 @@ async function downloadPost(path: string, body: unknown, fallbackName: string): 
 
 export class ApiError extends Error {
   constructor(public status: number, public data: any) {
-    super(typeof data?.detail === "string" ? data.detail : `Request failed (${status})`);
+    super(typeof data?.detail === "string" ? data.detail : defaultMessage(status));
   }
+}
+
+/** A plain message when the server sent no detail (502/503/504: the API is down or restarting behind the proxy). */
+function defaultMessage(status: number): string {
+  if (status === 502 || status === 503 || status === 504) return "Can't reach the ArchFlow server. Check that it is running and try again.";
+  if (status === 429) return "Too many requests. Wait a moment and try again.";
+  if (status >= 500) return `The server hit an error (${status}). Try again.`;
+  return `Request failed (${status})`;
 }
 
 /** Fired on any 401 so the app can show the sign-in screen (session expired or signed out elsewhere). */
