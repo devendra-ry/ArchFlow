@@ -680,3 +680,12 @@ export interface ComplianceRemediation {
   summary: string; engine: "llm" | "offline"; questions: string[]; requirements: ComplianceProposal[];
   steps: { controls: string[]; title: string; detail: string; components: string[]; effort: "low" | "medium" | "high" }[];
 }
+
+// ---- generated artifacts (infrastructure as code, tests, documents) ----
+export type GenerationKind = "iac" | "tests" | "docs";
+export type GenerationTarget = "terraform" | "compose" | "k8s" | "gherkin" | "pytest" | "playwright" | "srs" | "brd" | "runbook";
+export interface GeneratedFile { path: string; content: string }
+export interface GenerationResult {
+  kind: GenerationKind; target: GenerationTarget; branch: string; engine: "ai" | "offline"; cloud?: "aws" | "azure" | "gcp";
+  files: GeneratedFile[]; notes: string[]; checks: { path: string; ok: boolean; detail: string }[]; valid: boolean;
+}

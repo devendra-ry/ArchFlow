@@ -42,6 +42,7 @@ FEATURES: list[tuple[str, str]] = [  # (path pattern after /api/projects/{pid}, 
     (r"/meetings", "meetings"),
     (r"/knowledge", "knowledge"),
     (r"/costs", "costs"),
+    (r"/generate", "generation"),
     (r"/(github|confluence)", "integrations"),
     (r"/jira", "jira"),
 ]

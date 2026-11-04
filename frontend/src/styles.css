@@ -1249,3 +1249,21 @@ button.link { background: none; border: none; padding: 0; color: var(--primary);
   .recovery-codes { columns: 1; }
   .project-access th:nth-child(2), .project-access td:nth-child(2) { display: none; }
 }
+
+/* ---- Generate dialog (infrastructure as code, tests, documents) ---- */
+.gen-dialog { display: flex; flex-direction: column; gap: 8px; }
+.gen-targets { display: flex; flex-wrap: wrap; gap: 6px; }
+.gen-options { align-items: center; }
+.gen-ok { color: var(--ok); } .gen-bad { color: var(--danger); }
+.gen-preview { display: grid; grid-template-columns: minmax(160px, 240px) 1fr; border: 1px solid var(--border); border-radius: 8px; min-height: 260px; max-height: 52vh; overflow: hidden; }
+.gen-files { display: flex; flex-direction: column; overflow-y: auto; border-right: 1px solid var(--border); background: var(--panel-2); }
+.gen-files button { border: none; border-radius: 0; background: none; text-align: left; padding: 6px 10px; font-size: 12px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border-left: 2px solid transparent; }
+.gen-files button.on { color: var(--text); background: var(--panel); border-left-color: var(--primary); font-weight: 600; }
+.gen-code { margin: 0; padding: 10px 12px; overflow: auto; font-size: 12px; line-height: 1.5; white-space: pre; tab-size: 2; background: var(--panel); }
+@media (max-width: 720px) {
+  .gen-preview { grid-template-columns: 1fr; max-height: none; }
+  .gen-files { flex-direction: row; overflow-x: auto; border-right: none; border-bottom: 1px solid var(--border); }
+  .gen-files button { border-left: none; border-bottom: 2px solid transparent; flex-shrink: 0; }
+  .gen-files button.on { border-bottom-color: var(--primary); }
+  .gen-code { max-height: 55vh; }
+}

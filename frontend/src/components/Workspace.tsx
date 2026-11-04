@@ -33,6 +33,7 @@ import { ConfluenceDialog, GitHubDialog } from "./IntegrationsDialog";
 import { ConnectDialog } from "./ConnectDialog";
 import { ProjectAccessDialog } from "./SecurityDialogs";
 import { ExportDialog } from "./ExportDialog";
+import { GenerateDialog } from "./GenerateDialog";
 import { DiagramsDialog } from "./DiagramsDialog";
 import { DecisionsPanel } from "./DecisionsPanel";
 import { DesignChat } from "./DesignChat";
@@ -149,6 +150,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const [costsOpen, setCostsOpen] = useState(false);
   // null = never opened; false = closed but kept mounted (so "Show on canvas" and reopening keep the view)
   const [complianceOpen, setComplianceOpen] = useState<boolean | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
   const [confluenceOpen, setConfluenceOpen] = useState(false);
   const [github, setGithub] = useState<ExternalLinks | null>(null);
@@ -818,6 +820,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
                 <b>$ Cost estimate</b><span className="muted tiny">Monthly cost of this architecture, line by line, and ways to save</span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setComplianceOpen(true); }}>
                 <b>✓ Compliance</b><span className="muted tiny">SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001 checks on this design</span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setGenerateOpen(true); }}>
+                <b>⚙ Generate</b><span className="muted tiny">Terraform, Docker, Kubernetes, tests, SRS, BRD and runbooks</span></button>
               {confluence?.connected && can(role, "edit") && (
                 <button role="menuitem" onClick={() => { setToolsOpen(false); setConfluenceOpen(true); }}>
                   <b>⇪ Publish to Confluence</b><span className="muted tiny">The architecture spec as a page in {confluence.space_key}</span></button>
@@ -1068,6 +1072,10 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
               source: { type: "compliance", ref: p.controls.join(", ") } } }]);
             toast(`Added requirement: ${p.title}`);
           }} />
+      )}
+      {generateOpen && (
+        <GenerateDialog pid={pid} branch={branch} aiAvailable={!!ai?.available} canEdit={can(role, "edit")} toast={toast}
+          onClose={() => setGenerateOpen(false)} />
       )}
       {githubOpen && github && (
         <GitHubDialog pid={pid} branch={branch} repo={github.repo ?? ""} onClose={() => setGithubOpen(false)} onChanged={loadGithub} />

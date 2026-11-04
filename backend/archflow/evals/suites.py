@@ -8,7 +8,8 @@ A case is a dict from a dataset YAML. Shared keys:
 The intake suite also takes ``document: {filename, text}``: the uploaded file's name and (text) content; the meetings
 suite takes ``transcript: {filename, text}``, the knowledge suite ``documents: [{filename, text}]`` and a ``question``,
 and the costs suite ``assumptions`` (workload overrides); the compliance suite takes ``frameworks`` (ids) and
-``memory`` (project memory texts).
+``memory`` (project memory texts); the generation suite takes ``kind``, ``target``, an optional
+``cloud`` (terraform) and ``name`` (the project name).
 
 The ``adversarial`` suite runs another suite's agent (``target: ask | command | design | review | ...``) on
 red-team input (prompt injection in requirements or pasted documents, requests for the system prompt, attempts
@@ -26,9 +27,9 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from .. import (ai, chat, compliance, costs, evaluation, intake, knowledge, lld, meetings, merge, review, suggestions, exports,
-               diagrams, jira)
+               diagrams, generation, jira)
 from ..analysis import full_analysis
-from ..models import LLD_TYPES, ProjectState
+from ..models import LLD_TYPES, ProjectState, without_deleted
 from ..ops import apply_ops, resolve_node
 from ..templates import build_template
 
@@ -533,6 +534,28 @@ def run_compliance(case: dict[str, Any], org_id: str | None) -> Outcome:
                    contexts=[json.dumps(findings)], raw=out)
 
 
+def run_generation(case: dict[str, Any], org_id: str | None) -> Outcome:
+    state = build(case.get("project"))
+    d = generation.Design(name=case.get("name") or "Eval project", branch="main", state=without_deleted(state))
+    res = generation.generate(d, case["kind"], case["target"], use_ai=True, org_id=org_id, cloud=case.get("cloud", ""))
+    exp = case.get("expect") or {}
+    text = "\n\n".join(f"--- {f.path}\n{f.content}" for f in res.files)
+    bad = [c for c in res.checks if not c["ok"]]
+    checks: list[Check] = [("engine is ai", res.engine == "ai", res.engine + "; " + "; ".join(res.notes)),
+                           ("files are well-formed", not bad, "; ".join(f"{c['path']}: {c['detail']}" for c in bad[:3]))]
+    if exp.get("min_files"):
+        checks.append((f"at least {exp['min_files']} file(s)", len(res.files) >= exp["min_files"], str(len(res.files))))
+    for rid in exp.get("covers_requirements") or []:
+        checks.append((f"covers {rid}", rid in text, ""))
+    if exp.get("paths_any"):
+        paths = [f.path for f in res.files]
+        hit = [p for p in exp["paths_any"] if any(p in x for x in paths)]
+        checks.append((f"has a file like {exp['paths_any']}", bool(hit), ", ".join(paths[:8])))
+    checks += _text_checks(text, exp)
+    return Outcome(response=text[:20000], checks=checks, question=f"Generate {case['kind']} ({case['target']})",
+                   contexts=[generation.design_summary(d)], raw=res.dump())
+
+
 SUITES: dict[str, tuple[Callable[[dict[str, Any], str | None], Outcome], list[str]]] = {
     # suite: (runner, prompt ids it exercises)
     "compare": (run_compare, ["compare.evaluate"]),
@@ -552,4 +575,5 @@ SUITES: dict[str, tuple[Callable[[dict[str, Any], str | None], Outcome], list[st
     "knowledge": (run_knowledge, ["kb.answer"]),
     "costs": (run_costs, ["costs.optimize"]),
     "compliance": (run_compliance, ["compliance.review"]),
+    "generation": (run_generation, ["generate.iac", "generate.tests", "generate.docs"]),
 }

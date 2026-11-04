@@ -226,6 +226,15 @@ def jira_import_issues(project_id: str, keys: list[str], branch: str = "main", a
     return out
 
 
+@mcp.tool()
+def generate_artifacts(project_id: str, kind: str, target: str, branch: str = "main", use_ai: bool = False,
+                       cloud: str = "") -> dict[str, Any]:
+    """Generate files from the design: iac (terraform, compose, k8s), tests (gherkin, pytest, playwright) or docs
+    (srs, brd, runbook). Returns {files: [{path, content}], engine, notes, checks}."""
+    return _req("POST", f"/api/projects/{project_id}/generate", params={"branch": branch},
+                json={"kind": kind, "target": target, "ai": use_ai, "cloud": cloud})
+
+
 def main() -> None:
     mcp.run()
 
