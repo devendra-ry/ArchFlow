@@ -586,6 +586,8 @@ export interface JiraSettings {
   /** False when the server cannot encrypt the token (no ARCHFLOW_SECRET_KEY): the connection cannot be saved. */
   enabled: boolean; configured: boolean; site_url: string; email: string; project_key: string;
   last4: string | null; updated_at: string | null;
+  /** Live status from Jira webhooks: whether a secret exists (it is only shown once, when created). */
+  webhook?: { configured: boolean; created_at: string | null; url: string };
 }
 export interface JiraTestResult {
   ok: boolean; account?: string; error?: string;
@@ -612,4 +614,21 @@ export interface JiraPushResult {
   project_key: string; engine: string;
   counts: { created: number; updated: number; unchanged: number; failed: number };
   results: { ref: string; type: string; summary: string; action: string; status: "ok" | "skipped" | "error"; key: string; url: string; error: string }[];
+}
+
+// ---- Jira two-way sync (webhooks, pulling issues in) ----
+export interface JiraWebhookSetup {
+  secret: string; url: string; jql: string; events: string[]; steps: string[]; settings: JiraSettings;
+}
+export interface JiraIssuePreview {
+  key: string; url: string; summary: string; issue_type: string; priority: string; labels: string[];
+  status: string; status_category: string; description: string;
+  requirement: Pick<Requirement, "title" | "description" | "kind" | "category" | "priority" | "actors" | "acceptance_criteria" | "status">;
+}
+export interface JiraIssuePage {
+  project_key: string; jql: string; issues: JiraIssuePreview[]; next_page_token: string | null; hidden_linked: number;
+}
+export interface JiraImportResult {
+  imported: { key: string; requirement_id: string; title: string; kind: string }[];
+  skipped: { key: string; reason: string }[]; engine: "llm" | "offline"; links: JiraLink[];
 }

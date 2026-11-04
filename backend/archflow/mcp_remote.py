@@ -47,6 +47,7 @@ class Services:
     commit_version: Callable[[str, str, str, str], Awaitable[dict[str, Any]]]
     ai_command: Callable[[str, str, str, list[str], str], Awaitable[dict[str, Any]]]
     codegraph: Any = None  # codegraph.service.CodeGraphService (repository analysis)
+    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = None  # room messages (main.broadcast_room)
 
 
 INSTRUCTIONS = """ArchFlow holds a team's software architecture as structured data: components (nodes), connections \
@@ -630,5 +631,131 @@ def build_remote_mcp(services: Services) -> MCPServer:
         if not files:
             raise ToolError("give at least one file")
         return codegraph_call(services.codegraph.impact, project_id, files[:2000], branch, max(1, min(depth, 6)))
+
+    # ---- Jira (two-way sync; same rules as the REST routes: developer+ with a write connection) ----
+    def jira_conn(p: Principal, project_id: str, branch: str = "main") -> dict[str, Any]:
+        p.require_write()
+        project_for(p, project_id, branch)
+        conn = store.get_jira_connection(p.org_id)
+        if not conn:
+            raise ToolError("Jira is not connected for this organization: an admin connects it in ArchFlow's "
+                            "organization settings.")
+        return conn
+
+    def jira_key(conn: dict[str, Any], project_key: str) -> str:
+        from . import jira as jira_mod
+
+        try:
+            return jira_mod.check_project_key(project_key or conn["project_key"])
+        except ValueError as exc:
+            raise ToolError(f"Set a Jira project key: {exc}") from exc
+
+    async def jira_tell(project_id: str, branch: str, actor: str) -> None:
+        if services.broadcast:
+            await services.broadcast(project_id, branch, {"type": "jira", "actor": actor})
+
+    @mcp.tool()
+    async def jira_push_preview(project_id: str, branch: str = "main", project_key: str = "",
+                                ai: bool = True) -> dict[str, Any]:
+        """Dry run of pushing a branch to Jira: the epics, stories, sub-tasks and links that would be created,
+        updated or left unchanged. Sends nothing to Jira."""
+        from . import jira as jira_mod
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        key = jira_key(conn, project_key)
+        _, state = project_for(p, project_id, branch)
+        plan = await asyncio.to_thread(jira_mod.make_plan, store, project_id, state, org_id=p.org_id, ai=ai)
+        return {"project_key": key, "engine": plan["engine"], "counts": plan["counts"], "by_type": plan["by_type"],
+                "items": [{k: i.get(k) for k in ("ref", "type", "summary", "action", "external_key", "parent",
+                                                 "story_points")} for i in plan["items"]]}
+
+    @mcp.tool()
+    async def jira_push(project_id: str, confirm: bool = False, branch: str = "main", project_key: str = "",
+                        ai: bool = True) -> dict[str, Any]:
+        """Push a branch to Jira (creates or updates issues; unchanged ones are skipped). Call jira_push_preview
+        first and pass confirm=true."""
+        from . import jira as jira_mod
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        key = jira_key(conn, project_key)
+        if not confirm:
+            raise ToolError("Preview with jira_push_preview first, then call jira_push with confirm=true.")
+
+        def get_state() -> ProjectState:
+            return project_for(p, project_id, branch)[1]
+
+        try:
+            out = await asyncio.to_thread(jira_mod.push_project, store, conn, project_id, branch, get_state,
+                                          project_key=key, ai=ai, org_id=p.org_id, actor=p.actor)
+        except jira_mod.CONNECTION_ERRORS as exc:
+            raise ToolError(f"Jira push failed: {exc}") from exc
+        await jira_tell(project_id, branch, p.actor)
+        if services.broadcast:
+            await services.broadcast(project_id, branch, {"type": "activity", "actor": p.actor})
+        return {"project_key": out["project_key"], "counts": out["counts"], "engine": out["engine"],
+                "failed": [{k: r[k] for k in ("ref", "summary", "error")} for r in out["results"]
+                           if r["status"] == "error"]}
+
+    @mcp.tool()
+    async def jira_sync_status(project_id: str, branch: str = "main") -> dict[str, Any]:
+        """Pull the current Jira status of every linked issue now (webhooks keep it live when set up)."""
+        from . import jira as jira_mod
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        try:
+            n = await asyncio.to_thread(jira_mod.sync_status, store, conn, project_id)
+        except jira_mod.CONNECTION_ERRORS as exc:
+            raise ToolError(f"Could not read Jira: {exc}") from exc
+        await jira_tell(project_id, branch, p.actor)
+        return {"updated": n, "links": [{k: x[k] for k in ("object_kind", "object_id", "external_key", "status",
+                                                            "status_category")}
+                                        for x in store.list_external_links(project_id)]}
+
+    @mcp.tool()
+    async def jira_list_unlinked_issues(project_id: str, page_token: str = "", limit: int = 25, query: str = "",
+                                        project_key: str = "") -> dict[str, Any]:
+        """Issues in the Jira project that this ArchFlow project does not link to yet, newest first, each with
+        the requirement it would become. Pass next_page_token back as page_token for more."""
+        from . import jira as jira_mod
+        from . import jira_sync
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id)
+        key = jira_key(conn, project_key)
+
+        def run() -> dict[str, Any]:
+            with jira_mod.make_client(conn) as client:
+                return jira_sync.list_unlinked(client, store, project_id, key, page_token=page_token or None,
+                                               limit=limit, query=query)
+
+        try:
+            return await asyncio.to_thread(run)
+        except jira_mod.CONNECTION_ERRORS as exc:
+            raise ToolError(f"Could not read Jira: {exc}") from exc
+
+    @mcp.tool()
+    async def jira_import_issues(project_id: str, keys: list[str], branch: str = "main",
+                                 ai: bool = True) -> dict[str, Any]:
+        """Import Jira issues (keys such as SHOP-12) as requirements on a branch. Each is linked to its issue, so
+        importing it again is skipped."""
+        from . import jira as jira_mod
+        from . import jira_sync
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        try:
+            out = await jira_sync.import_issues(store, conn, project_id, branch, keys, ai=ai, org_id=p.org_id,
+                                                actor=p.actor, commit_ops=services.commit_ops,
+                                                get_state=lambda: project_for(p, project_id, branch)[1])
+        except (OpError, ConflictError) as exc:
+            raise ToolError(str(exc)) from exc
+        except jira_mod.CONNECTION_ERRORS as exc:  # includes bad input (ValueError) and JiraBusy
+            raise ToolError(str(exc)) from exc
+        if out["imported"]:
+            await jira_tell(project_id, branch, p.actor)
+        return out
 
     return mcp

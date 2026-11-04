@@ -35,9 +35,9 @@ interface Props {
 export function JiraBadge({ link }: { link: JiraLink }) {
   return (
     <a className={`jira-badge ${link.status_category || "unknown"}`} href={link.external_url || undefined} target="_blank" rel="noreferrer"
-      title={link.status ? `Jira status: ${link.status}` : "Pushed to Jira (refresh status from the Jira dialog)"}
+      title={link.status ? `Jira status: ${link.status}` : "Linked to Jira (use Sync now in the Jira dialog to read its status)"}
       onClick={(e) => e.stopPropagation()}>
-      {link.external_key}{link.status && <span className="muted"> · {link.status}</span>}
+      <span className="jira-dot" aria-hidden />{link.external_key}{link.status && <span className="muted"> · {link.status}</span>}
     </a>
   );
 }
@@ -145,7 +145,7 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
             <button className="small" onClick={() => setImporting(true)} title="Import requirements from a document (PDF, Word, Markdown, text)">⇪ Import</button>
             <button className="small" onClick={() => setMeeting(true)}
               title="Import requirements, decisions and action items from a meeting transcript or recording">🎙 Meeting</button>
-            {onJira && all.length > 0 && <button className="small" onClick={onJira} title="Preview, then push requirements to Jira as epics and stories">Jira ↗</button>}
+            {onJira && <button className="small" onClick={onJira} title="Push requirements to Jira, or pull Jira issues in as requirements">Jira ⇅</button>}
             {onGitHub && all.length > 0 && <button className="small" onClick={onGitHub} title="Preview, then push requirements to GitHub as issues">GitHub ↗</button>}
           </div>
         )}

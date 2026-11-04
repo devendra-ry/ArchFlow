@@ -24,7 +24,7 @@ import { AISettingsDialog } from "./OrgDialogs";
 import { CommandBar, type ChatDock, type ChatMode } from "./CommandBar";
 import { CommentsPanel } from "./CommentsPanel";
 import { NotificationBell } from "./NotificationBell";
-import type { AppNotification, Comment, ExternalLinks, JiraLinks, Member } from "../types";
+import type { AppNotification, Comment, ExternalLinks, JiraLink, JiraLinks, Member } from "../types";
 import { JiraDialog } from "./JiraDialog";
 import { KnowledgeDialog } from "./KnowledgeDialog";
 import { CostDialog } from "./CostDialog";
@@ -296,6 +296,15 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const loadJira = useCallback(() => { api.jiraLinks(pid).then(setJira).catch(() => setJira(null)); }, [pid]);
   useEffect(loadJira, [loadJira]);
   const jiraByReq = Object.fromEntries((jira?.links ?? []).filter((l) => l.object_kind === "requirement").map((l) => [l.object_id, l]));
+  // On the canvas: a component's epic, or the first sub-task made from a low-level element.
+  const jiraByNode = useMemo(() => {
+    const m: Record<string, JiraLink> = {};
+    for (const l of jira?.links ?? []) {
+      if (l.object_kind === "epic") m[l.object_id] = l;
+      else if (l.object_kind === "subtask") { const nid = l.object_id.split(":").slice(1).join(":"); if (nid && !m[nid]) m[nid] = l; }
+    }
+    return m;
+  }, [jira]);
   // GitHub issues and the Confluence page published for this project (shown when the org connected them).
   const loadGithub = useCallback(() => { api.githubLinks(pid).then(setGithub).catch(() => setGithub(null)); }, [pid]);
   useEffect(loadGithub, [loadGithub]);
@@ -338,6 +347,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
     onVersions: refreshMeta,
     onConversation: (id) => { assistant.onRemote(id); setDesignRemote({ id, at: Date.now() }); },
     onComments: () => { loadComments(); setNotifKey((k) => k + 1); },
+    onJira: () => loadJira(),
     onMemory: (_actor, added) => {
       loadMemory();
       if (added.length) toast(`✦ Remembered: ${added.join(" · ")}`);
@@ -459,7 +469,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           data: {
             model: m, dimmed: !!highlight && !highlight.has(m.id), highlighted: !!highlight?.has(m.id),
             diff: mark(m.id, d?.nodes), remote: remoteByNode[m.id], issues: issuesByNode[m.id],
-            childCount: childCount[m.id], stale: staleByNode[m.id],
+            childCount: childCount[m.id], stale: staleByNode[m.id], jira: jiraByNode[m.id],
             requirementIds: m.requirement_ids.filter((r) => !state.requirements[r]?.deleted),
             comments: commentsByNode[m.id]?.length, onComments: commentsByNode[m.id] ? () => openThread(commentsByNode[m.id].at(-1)!) : undefined,
           },
@@ -500,7 +510,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       }
       return out;
     });
-  }, [state, diff, highlight, remoteByNode, issuesByNode, level, levelOf, childCount, commentsByNode, openThread, staleByNode]);
+  }, [state, diff, highlight, remoteByNode, issuesByNode, level, levelOf, childCount, commentsByNode, openThread, staleByNode, jiraByNode]);
 
 
   const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected && !n.id.startsWith("ghost:")).map((n) => n.id), [nodes]);
@@ -1028,6 +1038,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       )}
       {jiraOpen && jira && (
         <JiraDialog pid={pid} branch={branch} defaultKey={jira.project_key} aiAvailable={!!ai?.available}
+          orgId={project?.org_id} isAdmin={can(role, "admin")} toast={toast}
           onClose={() => setJiraOpen(false)} onChanged={loadJira} />
       )}
       {knowledgeOpen && (

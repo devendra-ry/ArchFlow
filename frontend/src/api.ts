@@ -7,7 +7,7 @@ import type { Conversation, ConversationKind, ConversationMessage, MemoryCategor
 import type { OpenSpecChange, OpenSpecJob, OpenSpecOverview } from "./types";
 import type { ApprovalPolicy, VersionReview } from "./types";
 import type { AIUsageReport, AiSuggestion, AiTrace, AiTraceList, PromptInfo, ReviewResult, SuggestionMode } from "./types";
-import type { JiraLinks, JiraPlan, JiraPushResult, JiraSettings, JiraTestResult } from "./types";
+import type { JiraImportResult, JiraIssuePage, JiraLinks, JiraPlan, JiraPushResult, JiraSettings, JiraTestResult, JiraWebhookSetup } from "./types";
 import type { ConfluencePublish, CostEstimate, ExternalLinks, GitHubPlan, GitHubPushResult, IntegrationKind, IntegrationSettings } from "./types";
 import type { KbAnswer, KbDocument, KbPassage, KbStatus, MeetingDecision, MeetingResult, MeetingStep } from "./types";
 
@@ -383,6 +383,14 @@ export const api = {
     call<JiraPushResult>("POST", `/projects/${pid}/jira/push`, { project_key: project_key || null, ai, confirm: true }, b(branch)),
   jiraRefresh: (pid: string, branch: string) =>
     call<{ updated: number; links: JiraLinks["links"] }>("POST", `/projects/${pid}/jira/refresh`, undefined, b(branch)),
+  // ---- Jira two-way sync: webhook secret (admins), unlinked issues and import (developers and up) ----
+  createJiraWebhook: (org: string) => call<JiraWebhookSetup>("POST", `/orgs/${org}/jira/webhook`),
+  deleteJiraWebhook: (org: string) => call<null>("DELETE", `/orgs/${org}/jira/webhook`),
+  jiraIssues: (pid: string, opts: { page_token?: string | null; q?: string; limit?: number } = {}) =>
+    call<JiraIssuePage>("GET", `/projects/${pid}/jira/issues`, undefined, {
+      limit: String(opts.limit ?? 25), ...(opts.q ? { q: opts.q } : {}), ...(opts.page_token ? { page_token: opts.page_token } : {}) }),
+  jiraImport: (pid: string, branch: string, keys: string[], ai = true) =>
+    call<JiraImportResult>("POST", `/projects/${pid}/jira/import`, { keys, ai }, b(branch)),
   // ---- meeting intake ----
   /** Read a transcript or recording into proposed requirements, decisions and action items (nothing applied yet). */
   importMeeting: meetingStream,

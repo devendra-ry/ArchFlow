@@ -123,6 +123,9 @@ class OrgJiraConnection(Base):
     ciphertext: Mapped[str] = mapped_column(Text, nullable=False)  # AES-256-GCM API token
     last4: Mapped[str] = mapped_column(Text, nullable=False)
     project_key: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # The webhook secret Jira sends back (encrypted like the token; "" = no webhook). See jira_sync.py.
+    webhook_ciphertext: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    webhook_created_at: Mapped[str | None] = mapped_column(UTCDateTime)
     updated_by: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
 

@@ -1,7 +1,7 @@
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
 import { memo } from "react";
 import { brandIcon } from "../brandIcons";
-import type { ArchNode as ArchNodeModel, NodeType } from "../types";
+import type { ArchNode as ArchNodeModel, JiraLink, NodeType } from "../types";
 import { VENDOR_STYLE } from "./Palette";
 
 export const TYPE_META: Record<NodeType, { label: string; color: string; glyph: string }> = {
@@ -43,13 +43,14 @@ export interface ArchNodeData extends Record<string, unknown> {
   comments?: number; // open comment threads on this component
   requirementIds?: string[]; // linked requirements to show (soft-deleted ones left out); default: all links
   stale?: string[]; // linked requirements that changed after this component did
+  jira?: JiraLink; // the Jira epic (or sub-task) pushed for this component, with the status last read from Jira
   onComments?: () => void;
 }
 
 export type ArchFlowNode = Node<ArchNodeData, "arch">;
 
 function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
-  const { model, dimmed, highlighted, diff, remote, issues, childCount, comments, onComments, stale } = data;
+  const { model, dimmed, highlighted, diff, remote, issues, childCount, comments, onComments, stale, jira } = data;
   const reqIds = data.requirementIds ?? model.requirement_ids;
   const meta = TYPE_META[model.type] ?? TYPE_META.service;
   const logo = brandIcon(model.technology, model.name);
@@ -114,12 +115,28 @@ function ArchNodeView({ data, selected }: NodeProps<ArchFlowNode>) {
           {reqIds.length > 4 && <span className="chip">+{reqIds.length - 4}</span>}
         </div>
       )}
+      {jira && <JiraChip link={jira} />}
       {remote && remote.length > 0 && (
         <div className="an-remote" style={{ background: remote[0].color }}>{remote.map((r) => r.name).join(", ")}</div>
       )}
       <Handle type="source" position={Position.Bottom} />
       <Handle type="source" position={Position.Right} id="r" />
     </div>
+  );
+}
+
+const JIRA_CATEGORY: Record<string, string> = { new: "To Do", indeterminate: "In Progress", done: "Done" };
+
+/** The component's Jira issue: key and status colour (To Do / In Progress / Done), opening the issue. */
+function JiraChip({ link }: { link: JiraLink }) {
+  const cat = link.status_category || "unknown";
+  const label = JIRA_CATEGORY[cat] ?? (link.status || "Not synced yet");
+  return (
+    <a className={`an-jira nodrag ${cat}`} href={link.external_url || undefined} target="_blank" rel="noreferrer"
+      title={`Jira ${link.external_key}: ${link.status || "status not synced yet"}`} aria-label={`Jira ${link.external_key}, ${label}`}
+      onClick={(e) => e.stopPropagation()} onDoubleClick={(e) => e.stopPropagation()}>
+      <span className="an-jira-dot" aria-hidden />{link.external_key}<span className="an-jira-status">{label}</span>
+    </a>
   );
 }
 

@@ -674,7 +674,7 @@ def create_app(store: Store | None = None) -> FastAPI:
     integrations.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room)
     # ---- spec exports (Markdown, print/PDF, JSON, YAML) and coding-agent guides (exports.py) ----
     exports.register_routes(app, store, authz=authz, state_or_404=state_or_404)
-    jira.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room)
+    jira.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room, commit_ops=commit_ops)
 
     # ---- OpenSpec: spec-driven changes stored per project (openspec_service.py) ----
     def openspec_context(pid: str, branch: str) -> dict[str, Any]:
@@ -786,7 +786,7 @@ def create_app(store: Store | None = None) -> FastAPI:
 
     # ---- remote MCP server (Streamable HTTP + OAuth 2.1) ----
     mcp = build_remote_mcp(Services(store=store, commit_ops=commit_ops, commit_version=commit_version,
-                                    ai_command=run_ai_command, codegraph=codegraph))
+                                    ai_command=run_ai_command, codegraph=codegraph, broadcast=broadcast_room))
     provider: auth.ArchFlowOAuthProvider = mcp._archflow_provider
     app.state.mcp = mcp
 
