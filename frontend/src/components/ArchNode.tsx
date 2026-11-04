@@ -73,7 +73,8 @@ function ArchNodeView({ data, selected, dragging }: NodeProps<ArchFlowNode>) {
   return (
     <div className={cls} style={{ ["--accent" as string]: meta.color, ...(ring ? { boxShadow: `0 0 0 2px ${ring}` } : {}) }}>
       {(onOpenInternals || onRemove) && (
-        <NodeToolbar isVisible={selected && !dragging} position={Position.Top} offset={8} className="node-toolbar">
+        // Unset = React Flow's default: shown only while this is the one selected node (no stacks of toolbars on multi-select).
+        <NodeToolbar isVisible={dragging ? false : undefined} position={Position.Top} offset={8} className="node-toolbar">
           {onOpenInternals && (
             <button onClick={onOpenInternals} title="Open the internal design (double-click)">
               <span aria-hidden>↘</span> {childCount ? `Internals (${childCount})` : "Design internals"}</button>

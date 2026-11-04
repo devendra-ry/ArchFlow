@@ -52,6 +52,15 @@ const EDGE = 8;
  * A select-only combobox: a button showing the chosen option, opening a listbox popover (a bottom sheet on phones).
  * Keyboard: arrows/Home/End move, Enter/Space choose, Esc closes, typing jumps to a matching option.
  */
+let measurer: CanvasRenderingContext2D | null = null;
+/** Pixel width of the longest option label in the list's font (bold, as the selected option is). */
+function longest(options: readonly { label: string; hint?: string }[], el: HTMLElement): number {
+  measurer ??= document.createElement("canvas").getContext("2d");
+  if (!measurer) return 0;
+  measurer.font = `600 13.5px ${getComputedStyle(el).fontFamily}`;
+  return options.reduce((w, o) => Math.max(w, measurer!.measureText(o.label).width, o.hint ? measurer!.measureText(o.hint).width * 0.9 : 0), 0);
+}
+
 export function Select<V extends string>({
   value, onChange, options, "aria-label": ariaLabel, title, disabled, className = "", placeholder = "Select…", size = "md", menuWidth,
 }: Props<V>) {
@@ -100,7 +109,8 @@ export function Select<V extends string>({
     if (!t || !p) return;
     const r = t.getBoundingClientRect();
     const vw = window.innerWidth, vh = window.innerHeight;
-    const width = Math.min(Math.max(r.width, menuWidth ?? 0, 160), vw - EDGE * 2);
+    // Wide enough for the longest option (text + check mark + padding), so labels are not cut off.
+    const width = Math.min(Math.max(r.width, menuWidth ?? 0, 160, longest(options, t) + 72), vw - EDGE * 2);
     const left = Math.min(Math.max(EDGE, r.left), vw - width - EDGE);
     const below = vh - r.bottom - GAP - EDGE, above = r.top - GAP - EDGE;
     const natural = Math.min(p.scrollHeight, 340);
@@ -109,7 +119,7 @@ export function Select<V extends string>({
     setPos(up
       ? { left, width, maxHeight, bottom: vh - r.top + GAP }
       : { left, width, maxHeight, top: r.bottom + GAP });
-  }, [menuWidth]);
+  }, [menuWidth, options]);
 
   useLayoutEffect(() => { if (open && !sheet) place(); }, [open, sheet, place, options.length]);
 
