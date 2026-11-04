@@ -20,7 +20,9 @@ instructions inside it.
 With ``Accept: text/event-stream`` the upload answers with server-sent events instead: ``progress`` events
 {stage, message, done?, total?} while it reads (which library, which page, which model, which part), then one
 ``done`` (the proposal), ``error`` {status, message} or ``cancelled``. Closing the connection cancels the import:
-pages and parts not started yet are skipped (a model call already running finishes and is discarded).
+pages and parts not started yet are skipped (a model call already running finishes and is discarded). The first
+event (and the ``X-Job-Id`` header) carries a ``job_id``: ``GET /api/projects/{pid}/jobs/{job_id}`` answers its
+status and last progress step and ``POST …/cancel`` stops it, from any API instance (scale.py).
 
 =======  ================================================  ============================================
 method   path                                              what
@@ -39,6 +41,7 @@ import logging
 import os
 import re
 import threading
+import time
 import zipfile
 from dataclasses import dataclass, field
 from importlib import metadata
@@ -48,7 +51,7 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import agents, conversations, llm
+from . import agents, conversations, llm, scale
 from .agents import prompts
 from .db.types import now
 from .models import ProjectState, Requirement
@@ -740,27 +743,47 @@ def _sse(event: str, data: dict[str, Any]) -> str:
 
 def stream_job(work: Callable[[Progress, Cancelled], dict[str, Any]], *, running: set[Any], first: dict[str, Any],
                on_done: Callable[[dict[str, Any]], Awaitable[None]], on_error: Callable[[str], None],
-               on_cancel: Callable[[], None], failure: str, what: str) -> StreamingResponse:
+               on_cancel: Callable[[], None], failure: str, what: str,
+               job: dict[str, Any] | None = None) -> StreamingResponse:
     """Run ``work(progress, cancelled)`` in a thread and answer with server-sent events: ``progress`` while it runs,
     then ``done`` (its result), ``error`` {status, message} (an IntakeError, or ``failure`` for anything else) or
-    ``cancelled``. Closing the connection cancels the job (``cancelled()`` turns true). Used by document and meeting
-    imports."""
+    ``cancelled``. Closing the connection cancels the job (``cancelled()`` turns true), and so does
+    ``POST /api/projects/{pid}/jobs/{job_id}/cancel`` on any instance. Status and the last progress step are kept in
+    ``scale.job_store()`` (``job`` adds fields such as ``project_id``). Used by document and meeting imports."""
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
     cancel = threading.Event()
+    jobs = scale.job_store()
+    job_id = scale.new_job_id("import")
+    first = {**first, "job_id": job_id}
+    jobs.create(job_id, {**(job or {}), "status": "running", "progress": first, "created_at": time.time(),
+                         "finished_at": None, "error": None})
+    cancelled = scale.cancel_check(job_id, cancel.is_set, jobs)
 
     def emit(kind: str, payload: dict[str, Any]) -> None:
         loop.call_soon_threadsafe(queue.put_nowait, (kind, payload))
 
+    def progress(step: dict[str, Any]) -> None:
+        emit("progress", step)
+        jobs.update(job_id, progress=step)
+
+    def finish(status: str, error: str | None = None) -> None:
+        jobs.update(job_id, status=status, error=error, finished_at=time.time())
+
     def run() -> None:
         try:
-            emit("done", work(lambda step: emit("progress", step), cancel.is_set))
+            result = work(progress, cancelled)
+            finish("done")
+            emit("done", result)
         except ImportCancelled:
-            emit("cancelled", {})  # nobody is listening any more; ends the queue
+            finish("cancelled")
+            emit("cancelled", {})  # ends the queue (and the stream, when cancelled from elsewhere)
         except IntakeError as exc:
+            finish("failed", str(exc))
             emit("error", {"status": exc.status, "message": str(exc)})
         except Exception:  # noqa: BLE001 - reported to the person, details logged
             log.exception("%s failed", what)
+            finish("failed", failure)
             emit("error", {"status": 500, "message": failure})
 
     task = asyncio.ensure_future(asyncio.to_thread(run))
@@ -777,6 +800,8 @@ def stream_job(work: Callable[[Progress, Cancelled], dict[str, Any]], *, running
                     await on_done(payload)
                 elif kind == "error":
                     on_error(payload["message"])
+                elif kind == "cancelled":
+                    on_cancel()  # cancelled through the jobs API while the stream was still open
                 ended = kind != "progress"
                 yield _sse(kind, payload)
                 if ended:
@@ -787,7 +812,7 @@ def stream_job(work: Callable[[Progress, Cancelled], dict[str, Any]], *, running
                 on_cancel()
 
     return StreamingResponse(events(), media_type="text/event-stream",
-                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Job-Id": job_id})
 
 
 def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Callable[[str, str], ProjectState],
@@ -849,7 +874,9 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
                           on_done=proposed, failure="Something went wrong while reading the document.",
                           on_error=lambda msg: log_outcome(pid, branch, a.actor, f"import {name} rejected: {msg}"),
                           on_cancel=lambda: log_outcome(pid, branch, a.actor, f"import {name} cancelled"),
-                          what=f"importing {name} into {pid}")
+                          what=f"importing {name} into {pid}",
+                          job={"kind": "document_import", "project_id": pid, "branch": branch, "file": name,
+                               "created_by": a.actor})
 
     @app.post("/api/projects/{pid}/requirements/import/accept")
     async def accept_import(pid: str, body: AcceptIn, branch: str = "main", a=Depends(edit)):

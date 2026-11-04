@@ -5,6 +5,8 @@
 #
 # Put TLS in front of the web service (load balancer, Caddy, Cloudflare) and set ARCHFLOW_PUBLIC_URL to that
 # https:// origin. The API runs one worker: live updates and background jobs are in-process (see docs/deploy.md).
+# To run several API replicas, start the optional Redis too and point the API at it:
+#   ARCHFLOW_REDIS_URL=redis://redis:6379/0 in .env, then: docker compose -f docker-compose.prod.yml --profile scale up -d
 
 # Required in .env: POSTGRES_PASSWORD, ARCHFLOW_INTERNAL_TOKEN, ARCHFLOW_SECRET_KEY, ARCHFLOW_PUBLIC_URL, and at
 # least one LLM key (GEMINI_API_KEY, ANTHROPIC_API_KEY or OPENAI_API_KEY) for the AI features.
@@ -42,6 +44,7 @@ services:
       ARCHFLOW_SECRET_KEY: ${ARCHFLOW_SECRET_KEY:?set ARCHFLOW_SECRET_KEY in .env}
       ARCHFLOW_PUBLIC_URL: ${ARCHFLOW_PUBLIC_URL:?set ARCHFLOW_PUBLIC_URL (https://your-domain) in .env}
       ARCHFLOW_ALLOWED_ORIGINS: ${ARCHFLOW_ALLOWED_ORIGINS:-${ARCHFLOW_PUBLIC_URL}}
+      ARCHFLOW_REDIS_URL: ${ARCHFLOW_REDIS_URL:-}  # optional; see the redis service (profile "scale")
     volumes:
       - apidata:/app/data
     depends_on:
@@ -77,6 +80,19 @@ services:
         condition: service_healthy
       collab:
         condition: service_started
+
+  # Optional shared state for several API replicas (rate limits, job status, real-time fan-out). Not persisted:
+  # it holds only short-lived data.
+  redis:
+    image: redis:7-alpine
+    profiles: ["scale"]
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no --maxmemory 128mb --maxmemory-policy volatile-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 
 volumes:
   pgdata:

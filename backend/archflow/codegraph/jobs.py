@@ -2,12 +2,14 @@
 
 The API submits a job and returns at once; a small thread pool runs it: fetch the source (clone or local dir),
 run ``python -m archflow.codegraph.worker`` in a subprocess with a timeout, validate the worker's output and store
-it. Job status lives in an in-memory registry.
+it. Job status lives in ``scale.job_store()``: an in-memory registry, or Redis hashes with a TTL when
+``ARCHFLOW_REDIS_URL`` is set, so any API instance answers status polls and ``cancel`` (checked between phases)
+works from any instance. The analysis itself runs on the instance that accepted it.
 
 Seam for a real queue: ``JobRunner.submit`` / ``JobRunner.get`` are the whole interface used by the API and MCP.
 A production deployment can replace this class with one backed by a durable queue (Redis/RQ, Celery, SQS, a
-``jobs`` table + worker processes) without touching the routes; status survives restarts there, while here a
-restart forgets running jobs (their stored graphs are unaffected).
+``jobs`` table + worker processes) without touching the routes; a restart forgets running jobs here (their stored
+graphs are unaffected).
 """
 
 from __future__ import annotations
@@ -15,22 +17,24 @@ from __future__ import annotations
 import json
 import logging
 import os
-import secrets
 import shutil
 import subprocess
 import sys
 import tempfile
-import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Callable
 
+from .. import scale
 from . import normalize, sources
 
 log = logging.getLogger("archflow.codegraph")
-JOB_TTL = 24 * 3600
-MAX_JOBS_KEPT = 500
+JOB_TTL = scale.JOB_TTL
+
+
+class JobCancelled(Exception):
+    pass
 
 
 def analysis_timeout() -> int:
@@ -58,13 +62,12 @@ def run_worker(repo_dir: Path, workdir: Path) -> dict[str, Any]:
 
 class JobRunner:
     def __init__(self, store: Any, max_workers: int | None = None,
-                 worker: Callable[[Path, Path], dict[str, Any]] = run_worker):
+                 worker: Callable[[Path, Path], dict[str, Any]] = run_worker, jobs: scale.JobStore | None = None):
         self.store = store
         self.worker = worker
         n = max_workers or int(os.environ.get("ARCHFLOW_CODEGRAPH_JOBS", "1") or 1)
         self.pool = ThreadPoolExecutor(max_workers=max(1, n), thread_name_prefix="codegraph")
-        self.jobs: dict[str, dict[str, Any]] = {}
-        self.lock = threading.Lock()
+        self.jobs: scale.JobStore = jobs or scale.job_store()
 
     # ---- interface -------------------------------------------------------------------------------------
     def submit(self, pid: str, actor: str, *, repo_url: str | None = None, local_path: str | None = None,
@@ -78,20 +81,22 @@ class JobRunner:
             source = "local"
         else:
             raise sources.SourceError("give repo_url or local_path")
-        job = {"id": f"job-{secrets.token_hex(6)}", "project_id": pid, "status": "queued", "phase": "queued",
+        job = {"id": scale.new_job_id("job"), "kind": "codegraph", "project_id": pid, "status": "queued", "phase": "queued",
                "source": source, "repo_url": repo_url or None, "local_path": str(local) if local_path else None,
                "created_by": actor, "created_at": time.time(), "finished_at": None, "error": None,
                "code_graph_id": None}
-        with self.lock:
-            self._gc()
-            self.jobs[job["id"]] = job
-        self.pool.submit(self._run, job["id"], on_done)
+        self.jobs.create(job["id"], job)
+        self.pool.submit(self._run, dict(job), on_done)
         return self.public(job)
 
     def get(self, job_id: str) -> dict[str, Any] | None:
-        with self.lock:
-            job = self.jobs.get(job_id)
-            return self.public(job) if job else None
+        job = self.jobs.get(job_id)
+        return self.public(job) if job else None
+
+    def cancel(self, job_id: str) -> dict[str, Any] | None:
+        """Ask the job to stop (from any instance); it stops before its next phase."""
+        job = self.jobs.cancel(job_id)
+        return self.public(job) if job else None
 
     @staticmethod
     def public(job: dict[str, Any]) -> dict[str, Any]:
@@ -102,21 +107,18 @@ class JobRunner:
 
     # ---- internals ---------------------------------------------------------------------------------------
     def _set(self, job_id: str, **fields: Any) -> None:
-        with self.lock:
-            self.jobs[job_id].update(fields)
+        self.jobs.update(job_id, **fields)
 
-    def _gc(self) -> None:
-        cutoff = time.time() - JOB_TTL
-        for jid in [j for j, v in self.jobs.items() if v["finished_at"] and v["finished_at"] < cutoff]:
-            del self.jobs[jid]
-        while len(self.jobs) > MAX_JOBS_KEPT:
-            self.jobs.pop(next(iter(self.jobs)))
+    def _check(self, job_id: str) -> None:
+        if self.jobs.cancelled(job_id):
+            raise JobCancelled()
 
-    def _run(self, job_id: str, on_done: Callable[[dict[str, Any]], None] | None) -> None:
-        job = dict(self.jobs[job_id])
+    def _run(self, job: dict[str, Any], on_done: Callable[[dict[str, Any]], None] | None) -> None:
+        job_id = job["id"]
         workdir = Path(tempfile.mkdtemp(prefix="archflow-codegraph-"))
         try:
             commit = ""
+            self._check(job_id)
             if job["source"] == "git":
                 self._set(job_id, status="running", phase="cloning")
                 repo_dir = workdir / "repo"
@@ -124,10 +126,12 @@ class JobRunner:
             else:
                 repo_dir = Path(job["local_path"])
                 commit = sources.local_commit(repo_dir)
+            self._check(job_id)
             self._set(job_id, status="running", phase="analysing", commit_sha=commit or None)
             graph = self.worker(repo_dir, workdir)
             if job["source"] == "git":  # the clone is not needed any more: delete it before storing
                 shutil.rmtree(repo_dir, ignore_errors=True)
+            self._check(job_id)
             self._set(job_id, phase="storing")
             record = self.store.add_code_graph(
                 job["project_id"], source=job["source"], repo_url=job["repo_url"],
@@ -139,6 +143,9 @@ class JobRunner:
                     on_done(self.get(job_id) or {})
                 except Exception:  # pragma: no cover
                     log.exception("codegraph on_done hook failed")
+        except JobCancelled:
+            log.info("codegraph job %s cancelled", job_id)
+            self._set(job_id, status="cancelled", phase="cancelled", finished_at=time.time())
         except Exception as exc:
             log.info("codegraph job %s failed: %s", job_id, exc)
             self._set(job_id, status="failed", phase="failed", error=str(exc)[:500], finished_at=time.time())

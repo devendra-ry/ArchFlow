@@ -335,7 +335,35 @@ flowchart LR
     API --> LLM
     API --> CG --> GH
     API --> OS
+    API -. "optional: rate limits · jobs · fan-out" .-> R[("Redis")]
 ```
+
+**Scale-out (optional).** One API process needs nothing but the database. To run several API instances behind a
+load balancer, set `ARCHFLOW_REDIS_URL` (see `backend/archflow/scale.py`):
+
+- **Rate limits.** The per-org LLM limit and the sign-in limiter are shared. They use atomic Redis counters; the
+  keys are hashed, so no e-mail address is stored in Redis.
+- **Real-time fan-out.** Each instance delivers `/ws` events to its own sockets and publishes them on a Redis
+  channel per room (`archflow:room:<project>:<branch>`). A subscriber on every other instance delivers them to
+  its sockets. Messages carry the sender's instance id, so the sending instance never delivers them twice.
+  Presence spans instances. The subscriber logs failures and reconnects with backoff.
+- **Jobs.** Status and progress of repository analyses and document and meeting imports are kept in Redis
+  hashes with a 24 h TTL. Any instance answers `GET /api/projects/{pid}/jobs/{id}` and
+  `…/codegraph/jobs/{id}`, and a cancel sent to any instance stops the job. The work itself runs on the
+  instance that accepted it; an import's SSE stream stays on that instance.
+- **Health.** `/api/health` reports the Redis mode and the subscriber state. `/api/ready` pings Redis but does not
+  fail on it.
+- **Without Redis**, all of this stays in-process, as before. If a configured Redis fails, each call falls back
+  to in-process behaviour and logs a warning.
+- **Still per instance:**
+  - LLM circuit breakers and router cooldowns.
+  - The AI-budget cache (at most 15 s stale).
+  - Knowledge-base and code-graph caches, which hold derived data.
+- **Already shared:** OAuth consent requests, codes and tokens are in the database, and `/mcp` is stateless HTTP.
+- **Collab server.** Hocuspocus keeps each live Yjs document in the memory of one process. Run a single `collab`
+  instance, or route each document to a fixed instance (sticky routing by the `<project>:<branch>` document
+  name). The API's `ARCHFLOW_COLLAB_URL` patches must go through the same routing.
+  `@hocuspocus/extension-redis` is the path to running several active collab instances; it is not wired yet.
 
 ### The Operation Pipeline
 
@@ -472,7 +500,8 @@ GitHub, Confluence, Slack and Teams are connected per organization by admins und
 | **MCP** | MCP Python SDK (Streamable HTTP, OAuth 2.1) |
 | **Security** | scrypt passwords, HttpOnly session cookies, AES-256-GCM secrets, HMAC collab tickets, SSRF guards |
 | **Observability** | Built-in agent traces (input, output, LLM and tool calls, cost); OpenTelemetry export; Langfuse (optional) |
-| **Deployment** | Docker Compose (nginx web, API, collab, Postgres), GitHub Actions CI |
+| **Scale-out** | Redis (optional, redis-py asyncio): shared rate limits, job state and WebSocket fan-out |
+| **Deployment** | Docker Compose (nginx web, API, collab, Postgres, optional Redis), GitHub Actions CI |
 
 ---
 
@@ -590,7 +619,7 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 | `DATABASE_URL` | — | `postgresql://…` switches storage to Postgres |
 | `ARCHFLOW_DB` | `backend/data/archflow.db` | SQLite path when `DATABASE_URL` is unset (`:memory:` for tests) |
 | `POSTGRES_PASSWORD` | — | Password for the Postgres container |
-| `REDIS_URL` | — | Redis (local compose) |
+| `ARCHFLOW_REDIS_URL` | — | Optional shared Redis for several API instances (see [Scale-out](#scale-out)) |
 | `ARCHFLOW_COLLAB_URL` | `http://localhost:1234` | Where the API pushes server-side edits into live documents; empty disables it |
 | `ARCHFLOW_INTERNAL_TOKEN` | — | **Set it.** Shared secret between the API and the collab server (also signs collab tickets) |
 | `COLLAB_PORT` / `ARCHFLOW_API` | `1234` / `http://localhost:8000` | Collab server settings |
@@ -650,6 +679,14 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 | `ARCHFLOW_ALLOW_LOCAL_REPOS` | off | `1` lets developers analyse directories on the server (self-hosted/dev only) |
 | `ARCHFLOW_ALLOW_UNPINNED_GIT` | off | With git older than 2.37, URL analysis is refused unless this is `1` (developer machines only) |
 
+### Scale-out
+
+| Variable | Default | Description |
+|---|---|---|
+| `ARCHFLOW_REDIS_URL` | — | e.g. `redis://redis:6379/0` (`rediss://` for TLS). Shares rate limits, job status/cancel and real-time fan-out between API instances. Unset = everything in-process (single instance) |
+| `ARCHFLOW_REDIS_PREFIX` | `archflow` | Key and channel prefix, to share one Redis between deployments |
+| `ARCHFLOW_INSTANCE_ID` | random | Name of this API instance in fan-out messages, presence and `/api/health` |
+
 ### Production Compose
 
 | Variable | Default | Description |
@@ -671,6 +708,7 @@ See [`.env.example`](.env.example) for the full annotated list.
 | `api` | `backend/Dockerfile` | internal | FastAPI app (OpenSpec, diagram renderer, optional code analysis) |
 | `collab` | `collab/Dockerfile` | internal | Hocuspocus real-time collaboration server |
 | `postgres` | `postgres` image | internal | Database (volume `pgdata`) |
+| `redis` | `redis` image | internal | Optional (profile `scale`): `docker compose --profile scale …` and `ARCHFLOW_REDIS_URL=redis://redis:6379/0` to run several API replicas |
 
 ```bash
 cp .env.example .env   # set POSTGRES_PASSWORD, ARCHFLOW_INTERNAL_TOKEN, ARCHFLOW_SECRET_KEY, ARCHFLOW_PUBLIC_URL
@@ -684,7 +722,7 @@ See [docs/deploy.md](docs/deploy.md) for operations, backups and current single-
 | Service | Port | Description |
 |---|---|---|
 | `postgres` | `5432` | Local Postgres for running the API against it |
-| `redis` | `6379` | Local Redis |
+| `redis` | `6379` | Local Redis (`ARCHFLOW_REDIS_URL=redis://localhost:6379/0` to try scale-out) |
 
 ### Useful commands
 
@@ -821,7 +859,11 @@ The full production plan is in [docs/production-plan.md](docs/production-plan.md
    decisions and action items~~ (done);
    next: speaker diarization for uploaded recordings and live meeting capture
 6. **Generation** of tests, infrastructure as code and documentation (SRS/BRD/runbooks)
-7. **Scale-out** — shared Redis for rate limits, jobs and real-time fan-out across API instances
+7. **Scale-out**
+   - **Done:** shared Redis (`ARCHFLOW_REDIS_URL`) for rate limits, job status and cancel, and real-time fan-out
+     and presence across API instances.
+   - **Next:** Redis for the Hocuspocus collab server, so several collab instances can be active (it needs sticky
+     routing by document today), and a durable job queue so jobs survive restarts.
 
 ---
 

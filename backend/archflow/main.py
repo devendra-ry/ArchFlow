@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 from . import (accounts, ai, approvals, openspec_service, diagram_export, auth, catalog, chat, collab_sync, comments, conversations,
                decisions, lld, llm, history, intake, observability, review, secrets_box, suggestions, usage, users, exports, diagrams, jira,
-               costs, integrations, knowledge, meetings)
+               costs, integrations, knowledge, meetings, scale)
 from .analysis import full_analysis, trace_requirement
 from .codegraph.service import CodeGraphService
 from .codegraph.service import register_routes as register_codegraph_routes
@@ -134,10 +134,12 @@ WRITE_ROLES = {r for r in ROLES if can(r, "edit")}
 
 # --------------------------------------------------------------------------- realtime hub
 class Hub:
-    """Fan-out of state changes and presence for each (project, branch) room."""
+    """Fan-out of state changes and presence for each (project, branch) room. With ARCHFLOW_REDIS_URL the
+    ``bus`` (scale.RoomBus) carries messages and presence to the other API instances."""
 
-    def __init__(self) -> None:
+    def __init__(self, bus: scale.RoomBus | None = None) -> None:
         self.rooms: dict[str, dict[WebSocket, dict[str, Any]]] = {}
+        self.bus = bus or scale.RoomBus()
 
     @staticmethod
     def key(pid: str, branch: str) -> str:
@@ -145,14 +147,21 @@ class Hub:
 
     async def join(self, room: str, ws: WebSocket, user: dict[str, Any]) -> None:
         self.rooms.setdefault(room, {})[ws] = user
+        await self.bus.present(room, id(ws), user)
         await self.broadcast_presence(room)
 
     async def leave(self, room: str, ws: WebSocket) -> None:
         self.rooms.get(room, {}).pop(ws, None)
+        await self.bus.absent(room, id(ws))
         await self.broadcast(room, {"type": "left", "client_id": id(ws)})
         await self.broadcast_presence(room)
 
     async def broadcast(self, room: str, msg: dict[str, Any], exclude: WebSocket | None = None) -> None:
+        await self.deliver(room, msg, exclude)
+        await self.bus.publish(room, msg)  # other instances (no-op without Redis)
+
+    async def deliver(self, room: str, msg: dict[str, Any], exclude: WebSocket | None = None) -> None:
+        """Send to this instance's sockets in the room."""
         data = json.dumps(msg, default=str)
         for ws in list(self.rooms.get(room, {})):
             if ws is exclude:
@@ -164,6 +173,7 @@ class Hub:
 
     async def broadcast_presence(self, room: str) -> None:
         users_ = [{**u, "client_id": id(ws)} for ws, u in self.rooms.get(room, {}).items()]
+        users_ = await self.bus.presence(room, users_)
         await self.broadcast(room, {"type": "presence", "users": users_})
 
 
@@ -177,12 +187,17 @@ def create_app(store: Store | None = None) -> FastAPI:
     llm.set_org_config_resolver(store.get_ai_config)  # models chosen in AI settings
     # Every LLM call is recorded (tokens, estimated cost) and checked against the org's monthly budget.
     budgets = usage.install(store)
+    scale.install()  # shared rate limits when ARCHFLOW_REDIS_URL is set; in-process otherwise
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # The remote MCP endpoint's session manager must run for the lifetime of the app.
-        async with app.state.mcp.session_manager.run():
-            yield
+        hub.bus.start(hub.deliver)  # cross-instance fan-out (only with ARCHFLOW_REDIS_URL)
+        try:
+            async with app.state.mcp.session_manager.run():
+                yield
+        finally:
+            await hub.bus.stop()
 
     app = FastAPI(title="ArchFlow", version="0.1.0", lifespan=lifespan)
     origins = users.allowed_origins()
@@ -247,7 +262,7 @@ def create_app(store: Store | None = None) -> FastAPI:
     def api_health():
         """Liveness: the process answers (no dependency checks, so it is cheap to poll)."""
         return {"ok": True, "ai_mode": ai.MODE, "model": ai.MODEL, "llm": llm.status(),
-                "export": {"interactive": diagram_export.available()}}
+                "export": {"interactive": diagram_export.available()}, "redis": scale.status(hub.bus)}
 
     @app.get("/api/ready")
     def api_ready():
@@ -260,8 +275,10 @@ def create_app(store: Store | None = None) -> FastAPI:
             return JSONResponse(status_code=503, content={"ready": False, "database": f"{type(exc).__name__}"})
         head = migrate.head()
         ok = revision == head
+        # Redis is reported, not required: without it each instance falls back to in-process state.
         return JSONResponse(status_code=200 if ok else 503,
-                            content={"ready": ok, "database": store.dialect, "schema": revision, "expected": head})
+                            content={"ready": ok, "database": store.dialect, "schema": revision, "expected": head,
+                                     "redis": scale.status(hub.bus, ping=True)})
 
     @app.get("/api/catalog")
     def get_catalog():
@@ -331,6 +348,7 @@ def create_app(store: Store | None = None) -> FastAPI:
     codegraph = CodeGraphService(store, commit_ops, commit_version)
     app.state.codegraph = codegraph
     register_codegraph_routes(app, codegraph, authz=authz)
+    scale.register_routes(app, authz=authz)  # job status / cancel, answered by any instance
 
     @app.post("/api/projects/{pid}/commit", status_code=201)
     async def commit(pid: str, body: CommitIn, branch: str = "main", a: Access = Depends(edit)):
