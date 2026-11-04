@@ -638,6 +638,23 @@ def _names(exc: BaseException) -> set[str]:
     return {c.__name__ for c in type(exc).__mro__}
 
 
+_LAST_REFUSAL: dict[str, str] = {}  # breaker key -> why the provider last refused the key (shown while the circuit is open)
+
+
+def refusal_reason(exc: BaseException) -> str:
+    """A short, key-free reason for an auth-type failure: billing, an invalid key, no permission or an unknown model."""
+    text = str(exc).lower()
+    if "billing" in text or "outstanding balance" in text or "quota" in text and "exceeded" in text:
+        return "the provider account has a billing problem"
+    if "api key not valid" in text or "invalid api key" in text or "incorrect api key" in text or "invalid x-api-key" in text:
+        return "the API key was rejected"
+    if "not found" in text and "model" in text:
+        return "the model is not available for this key"
+    if "permission" in text or "forbidden" in text:
+        return "the key has no permission for this model"
+    return "the key was refused"
+
+
 def _classify(exc: BaseException) -> str:
     """'refused' | 'rate_limit' | 'transient' | 'auth' | 'bad_request' | 'unknown'."""
     names = _names(exc)
@@ -729,10 +746,12 @@ def _dispatch(group: str, org_id: str | None, **kwargs) -> Any:
 
     for tier_idx, tier in enumerate(tiers):
         # An org's own key gets its own breaker: one org's bad key must not trip the shared provider circuit.
-        breaker = _breaker(tier.model + (f"@{org_id}" if tier.provider or org_keys.get(_provider(tier.model)) else ""))
+        breaker_key = tier.model + (f"@{org_id}" if tier.provider or org_keys.get(_provider(tier.model)) else "")
+        breaker = _breaker(breaker_key)
         if not breaker.allow():
             log.info("llm skip model=%s group=%s reason=circuit_open", tier.model, group)
-            errors.append(f"{tier.model}: circuit open")
+            why = _LAST_REFUSAL.get(breaker_key)
+            errors.append(f"{tier.model}: {why}" if why else f"{tier.model}: circuit open")
             continue
         for attempt in range(max_attempts):
             total_calls += 1
@@ -754,7 +773,11 @@ def _dispatch(group: str, org_id: str | None, **kwargs) -> Any:
                 if kind in ("auth", "unknown"):
                     if kind == "unknown":
                         log.exception("unexpected LLM error from %s", tier.model)
-                    errors.append(f"{tier.model}: {kind} ({type(exc).__name__})")
+                    if kind == "auth":
+                        _LAST_REFUSAL[breaker_key] = refusal_reason(exc)
+                        errors.append(f"{tier.model}: {_LAST_REFUSAL[breaker_key]}")
+                    else:
+                        errors.append(f"{tier.model}: {kind} ({type(exc).__name__})")
                     break
                 # rate_limit / transient: back off on this tier, then re-dispatch to the next one
                 errors.append(f"{tier.model}: {kind}")
@@ -769,6 +792,7 @@ def _dispatch(group: str, org_id: str | None, **kwargs) -> Any:
                 time.sleep(delay)
                 continue
             breaker.success()
+            _LAST_REFUSAL.pop(breaker_key, None)
             usage = getattr(resp, "usage", None)
             log.info("llm ok group=%s model=%s served_by=%s org=%s latency_ms=%.0f total_ms=%.0f calls=%d "
                      "fallback_depth=%d prompt_tokens=%s completion_tokens=%s",

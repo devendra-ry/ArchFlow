@@ -371,3 +371,13 @@ def test_stream_refusal(monkeypatch, all_keys):
     install(monkeypatch, {"reasoning": [iter([chunk("I can"), chunk(None, finish="content_filter")])]})
     with pytest.raises(llm.LLMRefused):
         list(llm.stream_text("sys", [{"role": "user", "content": "hi"}]))
+
+
+def test_refusal_reason_names_the_problem_without_the_key():
+    from archflow.llm import refusal_reason
+    billing = Exception('GeminiException BadRequestError - {"error": {"code": 403, "message": "There are issues with '
+                        'your billing account, please resolve / pay your outstanding balance"}}')
+    assert refusal_reason(billing) == "the provider account has a billing problem"
+    assert refusal_reason(Exception("API key not valid. Please pass a valid API key.")) == "the API key was rejected"
+    assert refusal_reason(Exception("PermissionDeniedError: forbidden")) == "the key has no permission for this model"
+    assert refusal_reason(Exception("something else")) == "the key was refused"

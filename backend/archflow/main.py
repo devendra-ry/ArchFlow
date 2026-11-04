@@ -588,8 +588,10 @@ def create_app(store: Store | None = None) -> FastAPI:
             extra = {"knowledge": kb} if kb else {}
             answer = await asyncio.to_thread(lambda: ai.claude_ask(context, body.question, a.org_id, **extra))
         except ai.AIUnavailable as exc:
-            raise HTTPException(503, f"{exc}. Set GEMINI_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY), or add "
-                                     "your organization's key in AI settings, to use the project assistant.") from exc
+            hint = ("Fix the provider account, or add another provider's key in AI settings." if llm.available(a.org_id)
+                    else "Set GEMINI_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY), or add your organization's key "
+                         "in AI settings, to use the project assistant.")
+            raise HTTPException(503, f"{exc}. {hint}") from exc
         return {"answer": answer}
 
     # ---- cloud conversion ----
