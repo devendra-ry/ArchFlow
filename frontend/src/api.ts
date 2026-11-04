@@ -10,6 +10,7 @@ import type { AIUsageReport, AiSuggestion, AiTrace, AiTraceList, PromptInfo, Rev
 import type { JiraLinks, JiraPlan, JiraPushResult, JiraSettings, JiraTestResult } from "./types";
 import type { ConfluencePublish, CostEstimate, ExternalLinks, GitHubPlan, GitHubPushResult, IntegrationKind, IntegrationSettings } from "./types";
 import type { KbAnswer, KbDocument, KbPassage, KbStatus, MeetingDecision, MeetingResult, MeetingStep } from "./types";
+import type { AuthSettings, MfaChallenge, MfaStatus, ProjectRole, ProjectRoles } from "./types";
 
 export class ApiError extends Error {
   constructor(public status: number, public data: any) {
@@ -150,7 +151,8 @@ export const api = {
   me: () => call<Me>("GET", "/me"),
   signup: (email: string, name: string, password: string, invite?: string) =>
     call<Me>("POST", "/auth/signup", { email, name, password, invite }),
-  login: (email: string, password: string) => call<Me>("POST", "/auth/login", { email, password }),
+  /** A session, or (two-step sign-in on) a challenge to answer with mfaVerify. */
+  login: (email: string, password: string) => call<Me | MfaChallenge>("POST", "/auth/login", { email, password }),
   logout: () => call<null>("POST", "/auth/logout"),
   inviteInfo: (token: string) => call<InviteInfo>("GET", `/invites/${encodeURIComponent(token)}`),
   acceptInvite: (token: string) => call<Org>("POST", `/invites/${encodeURIComponent(token)}/accept`),
@@ -424,4 +426,22 @@ export const api = {
   confluenceLinks: (pid: string) => call<ExternalLinks>("GET", `/projects/${pid}/confluence/links`),
   confluencePublish: (pid: string, branch: string, dry_run: boolean) =>
     call<ConfluencePublish>("POST", `/projects/${pid}/confluence/publish`, { dry_run }, b(branch)),
+
+  // ---- two-step sign-in (MFA), single sign-on, per-project roles ----
+  mfaVerify: (mfa_token: string, code: string) => call<Me>("POST", "/auth/mfa/verify", { mfa_token, code }),
+  mfaStatus: () => call<MfaStatus>("GET", "/auth/mfa"),
+  mfaSetup: () => call<{ secret: string; otpauth_uri: string }>("POST", "/auth/mfa/setup"),
+  mfaEnable: (code: string) => call<MfaStatus>("POST", "/auth/mfa/enable", { code }),
+  mfaDisable: (code: string) => call<MfaStatus>("POST", "/auth/mfa/disable", { code }),
+  mfaRecoveryCodes: (code: string) => call<MfaStatus>("POST", "/auth/mfa/recovery-codes", { code }),
+  ssoDiscover: (email: string) => call<{ org_id: string; org_name: string; start_url: string }>("POST", "/auth/sso/discover", { email }),
+  authSettings: (org: string) => call<AuthSettings>("GET", `/orgs/${org}/auth-settings`),
+  saveSso: (org: string, body: { enabled: boolean; issuer: string; client_id: string; client_secret?: string; domains: string[];
+    default_role: string; require_sso: boolean }) => call<AuthSettings>("PUT", `/orgs/${org}/auth-settings/sso`, body),
+  deleteSso: (org: string) => call<null>("DELETE", `/orgs/${org}/auth-settings/sso`),
+  testSso: (org: string) => call<{ ok: boolean; detail: string }>("POST", `/orgs/${org}/auth-settings/sso/test`),
+  setRequireMfa: (org: string, require_mfa: boolean) => call<AuthSettings>("PUT", `/orgs/${org}/auth-settings/mfa`, { require_mfa }),
+  projectRoles: (pid: string) => call<ProjectRoles>("GET", `/projects/${pid}/roles`),
+  setProjectRole: (pid: string, userId: string, role: ProjectRole) => call<ProjectRoles>("PUT", `/projects/${pid}/roles/${userId}`, { role }),
+  clearProjectRole: (pid: string, userId: string) => call<ProjectRoles>("DELETE", `/projects/${pid}/roles/${userId}`),
 };

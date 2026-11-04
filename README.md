@@ -291,6 +291,14 @@ uv run --with ragas==0.3.9 --with "langchain-community>=0.3,<0.4" archflow-eval 
 
 - Email + password accounts (scrypt), opaque session token in an `HttpOnly`, `SameSite=Lax` cookie with a 14-day sliding expiry; sign-in attempts rate limited per email + IP
 - Organizations with six roles, single-use invite links, org-scoped projects
+- **Single sign-on (OpenID Connect)** per organization — Okta, Microsoft Entra ID, Google Workspace, Auth0, Keycloak…:
+  authorization code with PKCE, state and nonce; ID tokens checked against the provider's JWKS (signature, issuer,
+  audience, expiry, nonce). People sign in with their work email; new people join the org automatically with a
+  default role. Admins can **require SSO** (owners keep a password fallback). The client secret is encrypted and never shown again
+- **Two-step sign-in (TOTP)** — any authenticator app, 10 one-time recovery codes (stored hashed), codes rate limited
+  and never accepted twice. Admins can **require it for the org**: members without it are asked to turn it on first
+- **Per-project roles** — give a member a different role on one project (viewer, reviewer, editor or admin), from
+  **Tools → Project access**; org admins and project admins manage them
 - **CSRF / CORS** — unsafe requests must come from an allowed origin; CORS allows exactly those origins
 - **Real-time tickets** — a 2-minute HMAC-signed ticket opens the live document; viewers and reviewers connect **read-only**
 
@@ -633,9 +641,11 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 |---|---|---|
 | `ARCHFLOW_PUBLIC_URL` | `http://localhost:8000` | Public base URL of the API (OAuth issuer, MCP resource, `Secure` cookies on https) |
 | `ARCHFLOW_ALLOWED_ORIGINS` | `http://localhost:5173` | Browser origins allowed to call the API with the session cookie |
-| `ARCHFLOW_SECRET_KEY` | generated | Encrypts organizations' AI keys. If unset, the API generates `secret.key` next to the database — **set it explicitly in production** and back it up with the database |
+| `ARCHFLOW_SECRET_KEY` | generated | Encrypts organizations' AI keys, integration tokens, SSO client secrets and two-step sign-in secrets. If unset, the API generates `secret.key` next to the database — **set it explicitly in production** and back it up with the database |
 | `ARCHFLOW_SECRET_KEY_FILE` | — | Where to keep the generated key instead |
 | `ARCHFLOW_OPEN_SIGNUP` | `true` | `false` = sign-up by invite link only (the first account is always allowed) |
+| `ARCHFLOW_SSO_CALLBACK_URL` | `<first allowed origin>/api/auth/sso/callback` | Redirect URL registered at your identity provider for single sign-on |
+| `ARCHFLOW_ALLOW_PRIVATE_SSO_URLS` | off | `true` allows an identity provider on a private network (and plain http) |
 | `ARCHFLOW_MCP_ALLOWED_HOSTS` | — | Extra host names allowed to reach `/mcp` (your tunnel or domain) |
 | `ARCHFLOW_ACCESS_TOKEN_TTL` / `ARCHFLOW_REFRESH_TOKEN_TTL` | `3600` / `2592000` | OAuth token lifetimes (seconds) |
 
@@ -812,7 +822,8 @@ An end-to-end AI evaluation on a complex spec (a multi-region telehealth platfor
 
 The full production plan is in [docs/production-plan.md](docs/production-plan.md). In rough order of leverage:
 
-1. **Per-project role overrides, SSO** and approvals on more objects than versions
+1. **Per-project role overrides, OIDC SSO and two-step sign-in** — ✅ done; next: SAML single sign-on, SCIM
+   provisioning, passkeys, and approvals on more objects than versions
 2. **Repository analysis**: GitHub App, drift on every push/PR, PR review comments
 3. **Jira sync** — ✅ push (epics, stories, sub-tasks, links) with dry-run preview and status pull are done; next: Jira
    webhooks for live status, status shown on canvas components, and pulling new Jira issues back as requirements

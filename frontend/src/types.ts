@@ -96,7 +96,10 @@ export const ROLE_HELP: Record<Role, string> = {
   owner: "Everything, including organization settings and owners",
 };
 export interface Account { id: string; email: string; name: string; created_at: string; last_login_at: string | null }
-export interface Me { user: Account; orgs: (Org & { role: Role })[]; features: { ai_settings: boolean } }
+export interface Me {
+  user: Account; orgs: (Org & { role: Role })[]; features: { ai_settings: boolean; mfa?: boolean };
+  security?: MeSecurity;
+}
 export interface Member { org_id: string; user_id: string; email: string; name: string; role: Role; created_at: string }
 export interface Invite {
   id: string; org_id: string; email: string | null; role: Role; created_by: string | null; created_at: string; expires_at: number;
@@ -608,6 +611,24 @@ export interface JiraPlan {
   engine: "llm" | "offline"; items: JiraPlanItem[]; counts: Record<"create" | "update" | "skip", number>;
   by_type: Record<"epic" | "story" | "subtask" | "link", number>; mapping: string; project_key: string; site_url: string;
 }
+// ---- sign-in security: two-step sign-in (MFA), single sign-on, project roles ----
+export interface MeSecurity { auth_method: string; mfa_enabled: boolean; mfa_required: boolean; sso_required_orgs: string[] }
+export interface MfaChallenge { mfa_required: true; mfa_token: string }
+export interface MfaStatus {
+  enabled: boolean; pending: boolean; recovery_codes_left: number; available: boolean;
+  required_by: { id: string; name: string }[]; recovery_codes?: string[];
+}
+export interface SsoSettings {
+  enabled: boolean; issuer: string; client_id: string; secret_set: boolean; secret_last4: string | null;
+  domains: string[]; default_role: Role; require_sso: boolean;
+}
+export interface AuthSettings { sso: SsoSettings; require_mfa: boolean; callback_url: string; secrets_enabled: boolean; updated_at: string | null }
+export type ProjectRole = "viewer" | "reviewer" | "developer" | "admin";
+export interface ProjectRoleMember {
+  user_id: string; name: string; email: string; org_role: Role; project_role: ProjectRole | null; effective_role: Role;
+}
+export interface ProjectRoles { members: ProjectRoleMember[]; roles: ProjectRole[]; can_manage: boolean }
+
 export interface JiraPushResult {
   project_key: string; engine: string;
   counts: { created: number; updated: number; unchanged: number; failed: number };

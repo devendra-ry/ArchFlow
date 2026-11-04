@@ -4,6 +4,7 @@ import { getRecent, pruneRecent, timeAgo } from "../recent";
 import { can, type AISettings, type Me, type Project, type User } from "../types";
 import { AISettingsDialog, AIUsageDialog, JiraSettingsDialog, MembersDialog } from "./OrgDialogs";
 import { IntegrationsDialog } from "./IntegrationsDialog";
+import { SignInSettingsDialog } from "./SecurityDialogs";
 import { TracesDialog } from "./TracesDialog";
 import { UserMenu } from "./UserMenu";
 
@@ -49,7 +50,7 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
     return orgs.some((o) => o.id === saved) ? saved : orgs[0]?.id ?? "";
   });
   const [newOrg, setNewOrg] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"members" | "ai" | "usage" | "traces" | "jira" | "integrations" | null>(null);
+  const [dialog, setDialog] = useState<"members" | "ai" | "usage" | "traces" | "jira" | "integrations" | "signin" | null>(null);
   const org = orgs.find((o) => o.id === orgId);
   const role = org?.role;
   const isAdmin = can(role, "admin");
@@ -239,6 +240,7 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
                 <button className="small" onClick={() => setDialog("members")}>{isAdmin ? "Members & invites" : "Members"}</button>
                 {isAdmin && <button className="small" onClick={() => setDialog("jira")} title="Connect Jira Cloud to push requirements as epics and stories">Jira</button>}
                 {isAdmin && <button className="small" onClick={() => setDialog("integrations")} title="Connect GitHub, Confluence, Slack and Microsoft Teams">Integrations</button>}
+                {isAdmin && <button className="small" onClick={() => setDialog("signin")} title="Single sign-on and two-step sign-in rules">Sign-in & security</button>}
                 {newOrg === null ? (
                   <button className="small ghost" onClick={() => setNewOrg("")}>+ New organization</button>
                 ) : (
@@ -284,6 +286,9 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
       )}
       {dialog === "traces" && org && (
         <TracesDialog orgId={org.id} orgName={org.name} onClose={() => setDialog(null)} />
+      )}
+      {dialog === "signin" && org && role && (
+        <SignInSettingsDialog orgId={org.id} orgName={org.name} role={role} onClose={() => { setDialog(null); onMeChanged(); }} />
       )}
       {dialog === "integrations" && org && (
         <IntegrationsDialog orgId={org.id} orgName={org.name} onClose={() => setDialog(null)} />

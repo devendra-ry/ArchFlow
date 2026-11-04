@@ -19,7 +19,7 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import ai_providers, llm, secrets_box, users
+from . import ai_providers, llm, mfa, secrets_box, users
 from .auth import hash_secret
 from .authz import RANK, ROLES, Access, Authz
 
@@ -80,9 +80,28 @@ def set_session_cookie(response: Response, token: str) -> None:
     response.set_cookie(users.SESSION_COOKIE, token, **users.cookie_kwargs())
 
 
-def me_payload(store, user: dict[str, Any]) -> dict[str, Any]:
-    return {"user": users.public_user(user), "orgs": store.list_user_orgs(user["id"]),
-            "features": {"ai_settings": secrets_box.enabled()}}
+def me_payload(store, user: dict[str, Any], auth_method: str | None = None) -> dict[str, Any]:
+    """``security``: how this session signed in, whether MFA is on, and whether an org requires MFA (the web app
+    then sends people without MFA to enroll) or single sign-on (orgs this session cannot open until it uses SSO)."""
+    method = auth_method or user.get("auth_method") or "password"
+    orgs = store.list_user_orgs(user["id"])
+    rules = {o["id"]: store.get_auth_settings(o["id"]) or {} for o in orgs}
+    return {"user": users.public_user(user), "orgs": orgs,
+            "features": {"ai_settings": secrets_box.enabled(), "mfa": secrets_box.enabled()},
+            "security": {"auth_method": method, "mfa_enabled": store.mfa_enabled(user["id"]),
+                         "mfa_required": any(r.get("require_mfa") for r in rules.values()),
+                         "sso_required_orgs": [oid for oid, r in rules.items()
+                                               if r.get("sso_enabled") and r.get("require_sso")
+                                               and method != f"sso:{oid}"]}}
+
+
+def start_session(store, user_id: str, request: Request, response: Response,
+                  auth_method: str = "password") -> dict[str, Any]:
+    """Sign the user in (every factor already checked): session cookie, and the /api/me payload."""
+    store.touch_login(user_id)
+    set_session_cookie(response, users.create_session(store, user_id, request.headers.get("user-agent", ""),
+                                                      auth_method))
+    return me_payload(store, store.get_user(user_id), auth_method)
 
 
 def _invite_link(token: str) -> str:
@@ -176,9 +195,9 @@ def register_routes(app: FastAPI, store: Any, authz: Authz) -> None:
             users.login_limiter.failure(key)
             raise HTTPException(401, "Invalid email or password.")
         users.login_limiter.success(key)
-        store.touch_login(rec["id"])
-        set_session_cookie(response, users.create_session(store, rec["id"], request.headers.get("user-agent", "")))
-        return me_payload(store, store.get_user(rec["id"]))
+        if store.mfa_enabled(rec["id"]):  # second step: POST /api/auth/mfa/verify with this token and a code
+            return {"mfa_required": True, "mfa_token": mfa.start_challenge(store, rec["id"], "password")}
+        return start_session(store, rec["id"], request, response)
 
     @app.post("/api/auth/logout", status_code=204)
     def logout(request: Request, response: Response):
@@ -237,7 +256,8 @@ def register_routes(app: FastAPI, store: Any, authz: Authz) -> None:
     def remove_member(org_id: str, user_id: str, request: Request):
         user = current_user(request)
         # Anyone may leave an org; removing someone else needs admin (and owner to remove an owner).
-        a = authz.check_org(user, org_id, "read" if user_id == user["id"] else "admin")
+        leaving = user_id == user["id"]  # allowed even when the org's sign-in rules block this session
+        a = authz.check_org(user, org_id, "read" if leaving else "admin", policy=not leaving)
         m = target_member(a, user_id)
         if m["role"] == "owner" and a.role != "owner":
             raise HTTPException(403, "Only an owner can remove an owner.")
