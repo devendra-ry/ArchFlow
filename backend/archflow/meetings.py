@@ -696,7 +696,9 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
                 on_done=proposed, failure="Something went wrong while reading the meeting.",
                 on_error=lambda msg: log_outcome(pid, branch, a.actor, f"meeting {name} rejected: {msg}"),
                 on_cancel=lambda: log_outcome(pid, branch, a.actor, f"meeting {name} cancelled"),
-                what=f"importing meeting {name} into {pid}")
+                what=f"importing meeting {name} into {pid}",
+                job={"kind": "meeting_import", "project_id": pid, "branch": branch, "file": name,
+                     "created_by": a.actor})
         try:
             result = await asyncio.to_thread(read_and_propose, pid, a, name, body, state, knowledge)
         except IntakeError as exc:

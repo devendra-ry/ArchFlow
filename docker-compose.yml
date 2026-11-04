@@ -42,7 +42,7 @@ services:
   #   env_file: .env
   #   environment:
   #     DATABASE_URL: postgresql://archflow:${POSTGRES_PASSWORD}@postgres:5432/archflow
-  #     REDIS_URL: redis://redis:6379/0
+  #     ARCHFLOW_REDIS_URL: redis://redis:6379/0
   #   ports: ["8000:8000"]
   #   depends_on:
   #     postgres: { condition: service_healthy }

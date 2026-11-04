@@ -19,13 +19,13 @@ from typing import Any
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
-from . import ai_providers, llm, secrets_box, users
+from . import ai_providers, llm, scale, secrets_box, users
 from .auth import hash_secret
 from .authz import RANK, ROLES, Access, Authz
 
 ROLE_PATTERN = "^(" + "|".join(ROLES) + ")$"
 INVITE_TTL = 7 * 24 * 3600
-_signup_lock = threading.Lock()  # serializes the "first user" bootstrap check within this process
+_signup_lock = threading.Lock()  # serializes the "first user" bootstrap check (across instances with Redis)
 
 
 # --------------------------------------------------------------------------- request bodies
@@ -144,7 +144,7 @@ def register_routes(app: FastAPI, store: Any, authz: Authz) -> None:
             if invite.get("email") and users.normalize_email(invite["email"]) != email:
                 raise HTTPException(403, "This invite is for a different email address.")
         password_hash = users.hash_password(body.password)
-        with _signup_lock:
+        with scale.lock("signup", _signup_lock):
             if store.get_user_by_email(email):
                 raise HTTPException(409, "An account with this email already exists. Sign in instead.")
             first = store.count_users() == 0

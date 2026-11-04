@@ -46,11 +46,33 @@ Estimates use LiteLLM's price list, else built-in prices; override with
 - **Upgrades**: `git pull && docker compose -f docker-compose.prod.yml up -d --build`; Alembic migrations run on start (serialized across API processes with a Postgres advisory lock). Check with `GET /api/ready` or `docker compose exec api alembic -c archflow/db/alembic.ini current`.
 - **Logs**: `docker compose -f docker-compose.prod.yml logs -f api` (prompts and keys are never logged).
 
-## Current limits (single instance)
+## Scaling out (several API instances)
 
-Run exactly one `api` replica. Live updates (`/ws`), background jobs (OpenSpec generation, repository analysis),
-the login limiter and the AI rate limiter keep state in the API process, so a restart cancels running jobs and two
-replicas would not share events. Moving these to Redis is the next step for horizontal scaling.
+Without Redis, run exactly one `api` replica: live updates (`/ws`), job status, the sign-in limiter and the AI rate
+limiter live in the API process.
+
+To run several replicas behind a load balancer:
+
+1. Set `ARCHFLOW_REDIS_URL=redis://redis:6379/0` in `.env`.
+2. Start the optional Redis with `docker compose -f docker-compose.prod.yml --profile scale up -d`.
+3. Scale the API, for example with `--scale api=3` behind your own load balancer.
+
+The replicas then share the following through Redis:
+
+- rate limits;
+- `/ws` events and presence, through Redis pub/sub;
+- job status, progress and cancel requests: any instance answers `GET /api/projects/{pid}/jobs/{id}`.
+
+`GET /api/health` shows each instance's id and subscriber state, and `GET /api/ready` includes a Redis ping. If Redis
+goes away, each instance logs it, falls back to in-process behaviour and keeps retrying the subscriber.
+
+Some state is still per instance or per process:
+
+- **Jobs.** A job runs on the instance that accepted it, and a restart cancels it.
+- **Import progress.** An import's SSE stream stays on one connection. Clients can poll the jobs endpoint from any
+  instance instead.
+- **Collab server.** Run one `collab` instance, or route by document name with sticky sessions, including the API's
+  patch calls to `ARCHFLOW_COLLAB_URL`. Hocuspocus keeps live documents in memory.
 
 ## CI
 

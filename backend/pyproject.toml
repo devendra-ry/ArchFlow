@@ -20,6 +20,7 @@ dependencies = [
     "alembic>=1.14,<2",
     "pypdf>=6.21.4",
     "python-docx>=1.2.0",
+    "redis>=8.1.0",
 ]
 
 [project.optional-dependencies]
@@ -30,7 +31,10 @@ codegraph = ["graphifyy==0.9.77"]
 otel = ["opentelemetry-sdk>=1.27", "opentelemetry-exporter-otlp-proto-http>=1.27"]
 
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = [
+    "fakeredis>=2.40.0",
+    "pytest>=8",
+]
 
 [project.scripts]
 archflow-mcp = "archflow.mcp_server:main"

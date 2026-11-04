@@ -5,7 +5,8 @@ developer or above, see authz.py):
 
 =======  ==========================================  =============================================================
 POST     /api/projects/{pid}/codegraph/analyze       {repo_url | local_path} → job (503 without the codegraph extra)
-GET      /api/projects/{pid}/codegraph/jobs/{id}     job status (queued | running | done | failed)
+GET      /api/projects/{pid}/codegraph/jobs/{id}     job status (queued | running | done | failed | cancelled)
+POST     /api/projects/{pid}/codegraph/jobs/{id}/cancel  stop the job before its next phase (any API instance)
 POST     /api/projects/{pid}/codegraph/upload        normalized graph JSON from ``archflow-codegraph`` (size-limited)
 GET      /api/projects/{pid}/codegraph               analyses (newest first) + the latest summary
 GET      /api/projects/{pid}/codegraph/drift         ?branch= designed-vs-code drift issues
@@ -32,6 +33,7 @@ from typing import Any, Awaitable, Callable
 from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from .. import scale
 from ..models import ProjectState
 from . import INSTALL_HINT, available, normalize, sources
 from . import drift as drift_mod
@@ -153,11 +155,19 @@ class CodeGraphService:
         except sources.SourceError as exc:
             raise Invalid(str(exc)) from exc
 
+    def _jobs(self) -> Any:
+        # Without a local runner the job may still be running on another instance (shared store with Redis).
+        return self._runner.jobs if self._runner is not None else scale.job_store()
+
     def job(self, pid: str, job_id: str) -> dict[str, Any]:
-        job = self._runner.get(job_id) if self._runner is not None else None
-        if not job or job["project_id"] != pid:
+        job = self._jobs().get(job_id)
+        if not job or job.get("project_id") != pid:
             raise NotFound("job not found")
-        return job
+        return JobRunner.public(job)
+
+    def cancel_job(self, pid: str, job_id: str) -> dict[str, Any]:
+        self.job(pid, job_id)
+        return JobRunner.public(self._jobs().cancel(job_id) or {})
 
     def upload(self, pid: str, actor: str, raw: bytes, repo_url: str | None = None,
                commit_sha: str | None = None) -> dict[str, Any]:
@@ -266,6 +276,10 @@ def register_routes(app: FastAPI, svc: CodeGraphService, *, authz: Any) -> None:
     @app.get("/api/projects/{pid}/codegraph/jobs/{job_id}")
     def codegraph_job(pid: str, job_id: str, a=Depends(read)):
         return run(svc.job, pid, job_id)
+
+    @app.post("/api/projects/{pid}/codegraph/jobs/{job_id}/cancel")
+    def codegraph_job_cancel(pid: str, job_id: str, a=Depends(edit)):
+        return run(svc.cancel_job, pid, job_id)
 
     @app.post("/api/projects/{pid}/codegraph/upload", status_code=201)
     async def codegraph_upload(pid: str, request: Request, repo_url: str | None = None, commit_sha: str | None = None,
