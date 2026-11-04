@@ -10,6 +10,24 @@ import type { AIUsageReport, AiSuggestion, AiTrace, AiTraceList, PromptInfo, Rev
 import type { JiraLinks, JiraPlan, JiraPushResult, JiraSettings, JiraTestResult } from "./types";
 import type { ConfluencePublish, CostEstimate, ExternalLinks, GitHubPlan, GitHubPushResult, IntegrationKind, IntegrationSettings } from "./types";
 import type { KbAnswer, KbDocument, KbPassage, KbStatus, MeetingDecision, MeetingResult, MeetingStep } from "./types";
+import type { GeneratedFile, GenerationKind, GenerationResult, GenerationTarget } from "./types";
+
+/** POST a JSON body and save the file the server answers with (zip downloads). */
+async function downloadPost(path: string, body: unknown, fallbackName: string): Promise<string> {
+  const res = await fetch(`/api${path}`, {
+    method: "POST", credentials: "include", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => null);
+    if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+    throw new ApiError(res.status, data);
+  }
+  const name = /filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  Object.assign(document.createElement("a"), { href: url, download: name }).click();
+  window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+  return name;
+}
 
 export class ApiError extends Error {
   constructor(public status: number, public data: any) {
@@ -406,6 +424,11 @@ export const api = {
   costs: (pid: string, branch: string, assumptions: Record<string, unknown>, ai = true) =>
     call<CostEstimate>("POST", `/projects/${pid}/costs`, { assumptions, ai }, b(branch)),
   costsCsv: (pid: string, branch: string) => download(`/projects/${pid}/costs.csv`, { branch }, "costs.csv"),
+  // ---- generated infrastructure as code, tests and documents ----
+  generate: (pid: string, branch: string, kind: GenerationKind, target: GenerationTarget, ai: boolean, cloud = "") =>
+    call<GenerationResult>("POST", `/projects/${pid}/generate`, { kind, target, branch, ai, cloud }),
+  generateZip: (pid: string, branch: string, kind: GenerationKind, target: GenerationTarget, files: GeneratedFile[]) =>
+    downloadPost(`/projects/${pid}/generate/zip`, { kind, target, branch, files }, `${kind}-${target}.zip`),
 
   // ---- integrations (settings: admins; GitHub push and Confluence publish: developers and up) ----
   integrations: (org: string) => call<IntegrationSettings>("GET", `/orgs/${org}/integrations`),

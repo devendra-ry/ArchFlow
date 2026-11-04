@@ -613,3 +613,12 @@ export interface JiraPushResult {
   counts: { created: number; updated: number; unchanged: number; failed: number };
   results: { ref: string; type: string; summary: string; action: string; status: "ok" | "skipped" | "error"; key: string; url: string; error: string }[];
 }
+
+// ---- generated artifacts (infrastructure as code, tests, documents) ----
+export type GenerationKind = "iac" | "tests" | "docs";
+export type GenerationTarget = "terraform" | "compose" | "k8s" | "gherkin" | "pytest" | "playwright" | "srs" | "brd" | "runbook";
+export interface GeneratedFile { path: string; content: string }
+export interface GenerationResult {
+  kind: GenerationKind; target: GenerationTarget; branch: string; engine: "ai" | "offline"; cloud?: "aws" | "azure" | "gcp";
+  files: GeneratedFile[]; notes: string[]; checks: { path: string; ok: boolean; detail: string }[]; valid: boolean;
+}

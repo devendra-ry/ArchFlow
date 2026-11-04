@@ -31,6 +31,7 @@ import { CostDialog } from "./CostDialog";
 import { ConfluenceDialog, GitHubDialog } from "./IntegrationsDialog";
 import { ConnectDialog } from "./ConnectDialog";
 import { ExportDialog } from "./ExportDialog";
+import { GenerateDialog } from "./GenerateDialog";
 import { DiagramsDialog } from "./DiagramsDialog";
 import { DecisionsPanel } from "./DecisionsPanel";
 import { DesignChat } from "./DesignChat";
@@ -144,6 +145,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const [knowledgeOpen, setKnowledgeOpen] = useState(false);
   const [kbVersion, setKbVersion] = useState(0);
   const [costsOpen, setCostsOpen] = useState(false);
+  const [generateOpen, setGenerateOpen] = useState(false);
   const [githubOpen, setGithubOpen] = useState(false);
   const [confluenceOpen, setConfluenceOpen] = useState(false);
   const [github, setGithub] = useState<ExternalLinks | null>(null);
@@ -801,6 +803,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
                 <b>❖ Knowledge base</b><span className="muted tiny">Ask and search the project documents and meetings, with citations</span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setCostsOpen(true); }}>
                 <b>$ Cost estimate</b><span className="muted tiny">Monthly cost of this architecture, line by line, and ways to save</span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setGenerateOpen(true); }}>
+                <b>⚙ Generate</b><span className="muted tiny">Terraform, Docker, Kubernetes, tests, SRS, BRD and runbooks</span></button>
               {confluence?.connected && can(role, "edit") && (
                 <button role="menuitem" onClick={() => { setToolsOpen(false); setConfluenceOpen(true); }}>
                   <b>⇪ Publish to Confluence</b><span className="muted tiny">The architecture spec as a page in {confluence.space_key}</span></button>
@@ -1036,6 +1040,10 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       {costsOpen && (
         <CostDialog pid={pid} branch={branch} aiAvailable={!!ai?.available} rev={state?.rev ?? 0} onClose={() => setCostsOpen(false)}
           onSelect={(id) => { setCostsOpen(false); focusNodes([id]); }} />
+      )}
+      {generateOpen && (
+        <GenerateDialog pid={pid} branch={branch} aiAvailable={!!ai?.available} canEdit={can(role, "edit")} toast={toast}
+          onClose={() => setGenerateOpen(false)} />
       )}
       {githubOpen && github && (
         <GitHubDialog pid={pid} branch={branch} repo={github.repo ?? ""} onClose={() => setGithubOpen(false)} onChanged={loadGithub} />

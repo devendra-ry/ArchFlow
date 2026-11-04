@@ -24,7 +24,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 
-from . import approvals, auth, authz, catalog, lld, exports, diagrams
+from . import approvals, auth, authz, catalog, lld, exports, diagrams, generation
 from . import openspec_service as openspec_mod
 from . import conversations as conversations_mod
 from . import decisions as decisions_mod
@@ -285,6 +285,25 @@ def build_remote_mcp(services: Services) -> MCPServer:
             raise ToolError("format must be markdown or json")
         b = exports.collect(store, project_id, branch, state)
         return exports.spec_markdown(b) if format == "markdown" else exports.to_json(b)
+
+    @mcp.tool()
+    async def generate_artifacts(project_id: str, kind: str, target: str, branch: str = "main", use_ai: bool = False,
+                                 cloud: str = "") -> dict[str, Any]:
+        """Generate files from the design and requirements. kind/target: iac (terraform, compose, k8s), tests
+        (gherkin, pytest, playwright; each with a contract checklist per connection) or docs (srs, brd, runbook).
+        cloud (terraform only): aws, azure or gcp; empty = the cloud the design targets. use_ai=true lets the AI
+        refine the built-in version (needs edit access). Returns {files: [{path, content}], engine, notes, checks}."""
+        p = Principal(store)
+        if use_ai:
+            p.require_write()
+        _, state = project_for(p, project_id, branch)
+        d = generation.collect(store, project_id, branch, state)
+        try:
+            res = await asyncio.to_thread(generation.generate, d, kind, target, use_ai=use_ai, org_id=p.org_id,
+                                          cloud=cloud)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        return res.dump()
 
     @mcp.tool()
     def generate_coding_prompt(project_id: str, component_ids: list[str] | None = None, target: str = "claude-code",

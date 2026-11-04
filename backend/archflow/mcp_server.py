@@ -184,6 +184,15 @@ def generate_coding_prompt(project_id: str, component_ids: list[str] | None = No
                 json={"node_ids": component_ids or [], "requirement_ids": requirement_ids or [], "target": target})["prompt"]
 
 
+@mcp.tool()
+def generate_artifacts(project_id: str, kind: str, target: str, branch: str = "main", use_ai: bool = False,
+                       cloud: str = "") -> dict[str, Any]:
+    """Generate files from the design: iac (terraform, compose, k8s), tests (gherkin, pytest, playwright) or docs
+    (srs, brd, runbook). Returns {files: [{path, content}], engine, notes, checks}."""
+    return _req("POST", f"/api/projects/{project_id}/generate", params={"branch": branch},
+                json={"kind": kind, "target": target, "ai": use_ai, "cloud": cloud})
+
+
 def main() -> None:
     mcp.run()
 

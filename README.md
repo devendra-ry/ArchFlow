@@ -167,6 +167,16 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 - **Ways to save** — the `costs.optimize` agent writes recommendations grounded in the line items (components named, saving capped at what they cost, trade-offs against the NFRs); without a model, rules suggest the standard ones (commitments for steady instances, serverless for low traffic, a CDN for heavy egress, model routing for LLM-heavy designs). **CSV** download for spreadsheets
 - Prices are indicative on-demand list prices built into `costs.PRICES` (`ARCHFLOW_COST_PRICES` overrides any of them) — for comparing options and finding the big lines, not a quote. REST: `POST /api/projects/{id}/costs`, `GET …/costs.csv`
 
+### ⚙ Generation — Infrastructure as Code, Tests & Documents
+
+- **Tools → Generate** — pick a kind and a format, preview every file in tabs (code view, copy), download a **zip**. Every file is built from the branch: its components (and their catalog mappings), connections, requirements, accepted decisions and project memory
+- **Infrastructure as code** — **Terraform** for the cloud the design targets (AWS, Azure or Google Cloud, chosen from the components' vendors; you can pick another): providers, variables (secrets as sensitive variables), one resource per component (databases, caches, queues, streams, buckets, identity, gateways, container services or a shared Kubernetes cluster with an image repository per service), outputs and a `tfvars` example; high availability and an EU region are switched on when the requirements ask for them. **docker-compose** runs the stack locally — managed services become their open-source equivalent from the catalog (Aurora → PostgreSQL, MSK → Kafka, Cognito → Keycloak), with health checks, volumes and connection URLs from the connections. **Kubernetes** — Deployments, Services, autoscalers and disruption budgets (from the scaling and availability NFRs), a ConfigMap of endpoints, an example Secret and a kustomization
+- **Tests** — acceptance tests from the acceptance criteria as **Gherkin** `.feature` files, **pytest** or **Playwright** skeletons (criteria already written as Given/When/Then are split as they are), plus a **contract / integration checklist per connection** that knows its protocol (HTTP, gRPC, WebSocket, SQL, cache, messaging, third-party APIs)
+- **Documents** — an **SRS** (IEEE 830 sections: purpose, scope, functions, users, constraints, interfaces, FR/NFR, traceability), a **BRD** (objectives, stakeholders, scope, success metrics, risks) and a **runbook per service and data store** (health checks, scaling, failure modes, backups, alerts with thresholds read from the NFRs)
+- **Checked before you see it** — Terraform is checked for balanced braces, unterminated strings, duplicate names, undeclared variables and references to missing resources; YAML must parse (compose: real `depends_on`, no host port used twice; Kubernetes: valid names, Service selectors that match a Deployment, kustomization files that exist); Python must parse; Gherkin needs Given/When/Then in order. The dialog shows any failed check
+- **AI (optional, editors)** — the `generate.iac`, `generate.tests` and `generate.docs` agents refine the built-in version. An AI file is kept only if it is still well-formed, keeps every section of the document and cites only real requirement and decision ids; otherwise the built-in file stays and the dialog says why. Without a model, or for viewers, the built-in version is served. Nothing is stored
+- REST: `POST /api/projects/{id}/generate` `{kind: iac|tests|docs, target: terraform|compose|k8s|gherkin|pytest|playwright|srs|brd|runbook, branch, ai, cloud}` → `{files: [{path, content}], engine: ai|offline, notes, checks, valid}`; `POST …/generate/zip` (the previewed files, or generated again). MCP: `generate_artifacts(project_id, kind, target, branch, use_ai, cloud)`
+
 ---
 
 ### 🩺 Health & Validation
@@ -284,6 +294,7 @@ uv run --with ragas==0.3.9 --with "langchain-community>=0.3,<0.4" archflow-eval 
 - **JSON / YAML** — the full project (branch state, decisions, memory, versions and branches metadata) with `schema: archflow.project` and `schema_version` for tools; `exports.load_document` reads it back
 - **CLAUDE.md, AGENTS.md, .cursorrules** for coding agents, previewed before download: stack, services and their responsibilities, data stores, NFRs as constraints, accepted ADRs as rules and a folder layout, all derived from the model, plus project-specific conventions, do / don't and testing guidance written by the `exports.agent_guide` agent (skeleton only without an AI model). The OpenSpec download (`openspec.zip`) includes the three files at its root
 - REST: `GET /api/projects/{id}/export/spec.md | spec.html | project.json | project.yaml`, `POST …/export/guides`, `GET …/export/guides/{claude-md|agents-md|cursorrules}` (any project role); MCP: `export_spec` (markdown or json)
+- **Generated files** (Tools → Generate, see *Generation* above): Terraform, docker-compose, Kubernetes, Gherkin / pytest / Playwright tests, SRS, BRD and runbooks, previewed file by file and downloaded as a **zip**
 
 ---
 
@@ -820,7 +831,9 @@ The full production plan is in [docs/production-plan.md](docs/production-plan.md
 5. **Document intake** — ~~SRS/PDF/Word/Markdown → requirements~~ and ~~meeting transcripts and recordings → requirements,
    decisions and action items~~ (done);
    next: speaker diarization for uploaded recordings and live meeting capture
-6. **Generation** of tests, infrastructure as code and documentation (SRS/BRD/runbooks)
+6. **Generation** — ~~tests (Gherkin, pytest, Playwright, contract checklists), infrastructure as code (Terraform,
+   docker-compose, Kubernetes) and documentation (SRS, BRD, runbooks)~~ (done, Tools → Generate);
+   next: Helm charts, Pulumi / Bicep, OpenAPI-driven contract tests and `terraform validate` in a sandbox
 7. **Scale-out** — shared Redis for rate limits, jobs and real-time fan-out across API instances
 
 ---
