@@ -28,7 +28,7 @@ test.describe("sign up and projects", () => {
     await page.goto("/#/login");
     await page.getByLabel("Email").fill("owner@e2e.test");
     await page.getByLabel(/Password/).fill("not the password");
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { name: "Sign in", exact: true }).click();
     await expect(page.getByRole("alert")).toBeVisible();
   });
 });
