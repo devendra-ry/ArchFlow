@@ -76,6 +76,7 @@ jobs:
     steps:
       - name: Skip without a GEMINI_API_KEY secret
         if: env.GEMINI_API_KEY == ''
+        working-directory: .  # backend/ doesn't exist yet: this runs before the checkout
         run: echo "::notice::GEMINI_API_KEY is not set; skipping the AI evals."
       - uses: actions/checkout@v4
         if: env.GEMINI_API_KEY != ''
