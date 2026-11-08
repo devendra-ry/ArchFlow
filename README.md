@@ -164,6 +164,7 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
   - Every diagram comes with a plain-language **alt text** (set on the rendered SVG and embedded as Mermaid `accTitle` / `accDescr`)
 - **Convert** a whole design to **AWS / Azure / Google Cloud / open source**, or swap one component for its equivalent
 - **Dark / light mode**, keyboard shortcuts (`Ctrl+K` project switcher, `L` tidy, `F` full screen)
+- **Works on phones and tablets** — on narrow screens the side panels become drawers, menus become bottom sheets, dialogs go full screen and a bottom toolbar holds the canvas actions, so you can review, comment and approve on the go
 
 ---
 
@@ -283,7 +284,7 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 ### 🤖 MCP for AI Agents
 
 - **Remote MCP server** at `/mcp` (Streamable HTTP) with **OAuth 2.1** (dynamic client registration, PKCE, consent page, rotating refresh tokens, revocation) or personal access tokens
-- Works with **Claude Code, Claude.ai, Claude Desktop, Codex** and other MCP clients; **48 tools** (incl. Jira push, sync and import), org-scoped, read-only or read & edit, capped by your role
+- Works with **Claude Code, Claude.ai, Claude Desktop, Codex** and other MCP clients; **49 tools** (incl. Jira push, sync and import), org-scoped, read-only or read & edit, capped by your role
 - Agent edits go through the same pipeline as the canvas and appear live, attributed to "*user* via MCP"
 - Coding loop: **list_tasks → get_task_brief → implement → report_progress** (status and PR link show in the activity)
 
@@ -296,6 +297,7 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 - Retries and cooldowns, exponential backoff with jitter (honouring `Retry-After`), cross-provider fallback, a per-model circuit breaker and a per-org request limit
 - **AI usage** — every call recorded with tokens and an estimated cost per organization, project, feature and model; a **monthly budget** pauses AI features (they fall back to built-in behaviour) when it is used up
 - Keys are encrypted at rest (AES-256-GCM); only the last 4 characters are ever shown
+- **Clear errors** — when a model call fails, ArchFlow says why (billing or quota, rejected key, no permission for the model, provider down) instead of a generic error, and says when the ArchFlow server itself can't be reached
 
 | Provider | LiteLLM prefix | Key | Notes |
 |---|---|---|---|
@@ -837,7 +839,7 @@ ArchFlow/
 │   │   ├── collab_sync.py       # API ↔ collab server (field-level patches)
 │   │   ├── users.py · auth.py · authz.py · accounts.py  # Accounts, sessions, roles, orgs, CSRF
 │   │   ├── secrets_box.py       # AES-256-GCM encryption of org secrets
-│   │   ├── mcp_remote.py        # Remote MCP server (OAuth 2.1, 48 tools)
+│   │   ├── mcp_remote.py        # Remote MCP server (OAuth 2.1, 49 tools)
 │   │   ├── mcp_server.py        # Local stdio MCP server
 │   │   ├── store.py             # persistence (one store for SQLite and Postgres)
 │   │   ├── db/                  # SQLAlchemy models, column types, Alembic migrations
