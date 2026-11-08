@@ -29,6 +29,18 @@ ArchFlow treats requirements, architecture, decisions and versions as **one stru
 
 ---
 
+## 🎬 Watch the Walkthrough
+
+<div align="center">
+
+[![ArchFlow: Open-Source AI System Design, from Requirements to Code](https://img.youtube.com/vi/hqfFbIlfeHc/maxresdefault.jpg)](https://youtu.be/hqfFbIlfeHc)
+
+**[▶ Watch on YouTube](https://youtu.be/hqfFbIlfeHc)** · a complex global payments platform designed end to end: requirements, HLD, ADRs, LLD of every component, production checks, generated code and team workflows
+
+</div>
+
+---
+
 ## Screenshots
 
 ### Landing Page
@@ -841,6 +853,10 @@ ArchFlow/
 │   │   ├── collab.ts · realtime.ts  # Yjs provider, WebSocket events
 │   │   ├── assistant.ts · suggestions.ts  # Conversation state, project-based suggestions
 │   │   └── layout.ts · exportImage.ts  # Tidy-up layout, PNG/SVG export
+│   ├── e2e/                     # Playwright end-to-end suite
+│   ├── marketing/               # Recorded demo and tutorial videos (see Videos)
+│   │   ├── demo.spec.ts · build.py      # Short marketing demo
+│   │   └── tutorial/            # In-depth tutorial: chapters, narration, editor
 │   └── Dockerfile
 ├── deploy/nginx.conf.template   # Web container config
 ├── docs/
@@ -873,6 +889,42 @@ The Playwright suite (`frontend/e2e/`) starts the API, collab server and web app
 CI (`.github/workflows/ci.yml`) runs the backend tests on SQLite and Postgres (including the migration drift checks), the frontend build and audit, the Playwright suite, the collaboration end-to-end test, and the Docker image builds.
 
 An end-to-end AI evaluation on a complex spec (a multi-region telehealth platform) lives in [docs/evaluation](docs/evaluation): requirements, a scoring rubric and results, reproducible with `scripts/eval_carelink.py`.
+
+---
+
+## 🎬 Videos
+
+Two videos are recorded from the real app by Playwright, not edited by hand, so they can be re-made after any UI change.
+
+**In-depth tutorial** ([watch on YouTube](https://youtu.be/hqfFbIlfeHc), source in `frontend/marketing/tutorial/`): one complex production system, *PayFlow · Global Payments Platform*, designed end to end with the real AI, 27 minutes at 1.5× speed in 1080p with narration and YouTube chapters:
+
+| # | Chapter | What it shows |
+|---|---|---|
+| 1 | Your workspace | Sign up and sign in, invite your team, AI models and budget, a new project |
+| 2 | Requirements | PRD import, a meeting transcript, traceability, the knowledge base |
+| 3 | High-level design | Guided questions, architecture options with pros, cons and cost, drafts |
+| 4 | Architecture decision | Compare drafts with weighted priorities, record an ADR, adopt it into main |
+| 5 | Canvas and assistant | Canvas tour, catalog, trace links, cloud conversion, Edit and Ask with AI |
+| 6 | Low-level design | Internals of each component: modules, API endpoints, tables, events; hand edits; C4, sequence, ER and deployment diagrams |
+| 7 | Production readiness | Health score, AI review board, cost estimate, PCI DSS, SOC 2 and GDPR |
+| 8 | From design to code | Terraform, Kubernetes, tests, SRS, runbooks, diagram export, Vibe code (OpenSpec), MCP |
+| 9 | Code and architecture | Code graph, reconstruct the architecture, drift, change impact |
+| 10 | Team workflow | Versions and approval, branch and merge, compare and restore, a teammate joins live, @mentions, access |
+
+```bash
+cd frontend
+# record (fresh API, collab and web servers on their own ports; real AI from backend/.env)
+E2E_REAL_AI=1 npx playwright test -c playwright.tutorial.config.ts             # all chapters
+E2E_REAL_AI=1 npx playwright test -c playwright.tutorial.config.ts -g "05"     # re-record one chapter
+# edit: narration (Microsoft neural voice), music, AI waits and loading screens cut short, chapters joined
+uv run --with edge-tts --with imageio-ffmpeg python marketing/tutorial/build.py           # all chapters
+uv run --with edge-tts --with imageio-ffmpeg python marketing/tutorial/build.py 06-lld    # rebuild one chapter
+SPEED=1 uv run --with edge-tts --with imageio-ffmpeg python marketing/tutorial/build.py   # normal speed (default 1.5)
+```
+
+Each chapter is recorded as 1080p frames plus a timeline of scenes and AI waits under `frontend/marketing/out/tutorial/<chapter>/`. The narration for each scene is in `marketing/tutorial/narration.json`. The result is `out/tutorial/ArchFlow-tutorial.mp4`, with the YouTube chapter list in `chapters.txt`. Record long runs in chapters (`-g`) rather than all at once: live sync can slow down late in a very long session.
+
+**Marketing demo** (`frontend/marketing/demo.spec.ts`): a short overview with offline AI, recorded with `npx playwright test -c playwright.video.config.ts` and edited with `python marketing/build.py marketing/out`.
 
 ---
 
