@@ -270,9 +270,21 @@ def consent_page(req: dict[str, Any], request_id: str, orgs: list[dict[str, Any]
 <p class="muted" style="text-align:center;margin-top:12px">You can revoke access at any time from ArchFlow.</p>""")
 
 
-def login_page(next_url: str, app_url: str, error: str = "", email: str = "") -> str:
-    """Minimal sign-in form served by the API (used by the OAuth consent flow; the web app has its own)."""
+def login_page(next_url: str, app_url: str, error: str = "", email: str = "", mfa_token: str = "") -> str:
+    """Minimal sign-in form served by the API (used by the OAuth consent flow; the web app has its own). With
+    ``mfa_token`` it asks for the two-step sign-in code instead."""
     esc = html.escape
+    if mfa_token:
+        return _page("Sign in to ArchFlow", f"""
+<form class="card" method="post" action="/oauth/login">
+  <h1>Enter your code</h1>
+  <p class="muted">Open your authenticator app and enter the 6-digit code for ArchFlow, or use a recovery code.</p>
+  {f'<p class="err">{esc(error)}</p>' if error else ''}
+  <input type="hidden" name="next" value="{esc(next_url)}">
+  <input type="hidden" name="mfa_token" value="{esc(mfa_token)}">
+  <label>Code<input type="text" name="code" required autocomplete="one-time-code" inputmode="text" autofocus></label>
+  <div class="actions"><button class="primary" type="submit">Continue</button></div>
+</form>""")
     return _page("Sign in to ArchFlow", f"""
 <form class="card" method="post" action="/oauth/login">
   <h1>Sign in to continue</h1>

@@ -3,6 +3,7 @@ import { api } from "../api";
 import type { Issue, JiraLink, Op, ProjectState, Requirement, RequirementRevision } from "../types";
 import { Field } from "./Field";
 import { ImportRequirementsDialog, sourceLabel } from "./ImportRequirementsDialog";
+import { MeetingImportDialog } from "./MeetingImportDialog";
 
 interface Props {
   pid: string;
@@ -22,15 +23,21 @@ interface Props {
   jira?: Record<string, JiraLink>;
   /** Open the Jira push dialog (shown when the org has Jira connected and you may push). */
   onJira?: () => void;
+  /** GitHub issues pushed for requirements, by requirement id. */
+  github?: Record<string, JiraLink>;
+  /** Open the GitHub push dialog (shown when the org has GitHub connected and you may push). */
+  onGitHub?: () => void;
+  /** After a meeting import: decisions were recorded, or the knowledge base changed. */
+  onMeetingImported?: (changed: { decisions: boolean; knowledge: boolean }) => void;
 }
 
 /** A requirement's Jira issue key, linked, with the status last read from Jira. */
 export function JiraBadge({ link }: { link: JiraLink }) {
   return (
     <a className={`jira-badge ${link.status_category || "unknown"}`} href={link.external_url || undefined} target="_blank" rel="noreferrer"
-      title={link.status ? `Jira status: ${link.status}` : "Pushed to Jira (refresh status from the Jira dialog)"}
+      title={link.status ? `Jira status: ${link.status}` : "Linked to Jira (use Sync now in the Jira dialog to read its status)"}
       onClick={(e) => e.stopPropagation()}>
-      {link.external_key}{link.status && <span className="muted"> · {link.status}</span>}
+      <span className="jira-dot" aria-hidden />{link.external_key}{link.status && <span className="muted"> · {link.status}</span>}
     </a>
   );
 }
@@ -84,10 +91,11 @@ function History({ pid, branch, req }: { pid: string; branch: string; req: Requi
 }
 
 export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, issues, traced, onTrace, send, onPrompt,
-  readOnly = false, isAdmin = false, jira = {}, onJira }: Props) {
+  readOnly = false, isAdmin = false, jira = {}, onJira, github = {}, onGitHub, onMeetingImported }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<"edit" | "history">("edit");
   const [importing, setImporting] = useState(false);
+  const [meeting, setMeeting] = useState(false);
   const [filter, setFilter] = useState("");
   const [view, setView] = useState<View>("all");
   const everything = Object.values(state.requirements);
@@ -135,13 +143,24 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
             <button className="small primary" onClick={() => add("functional")} title="A feature the system must provide">+ Functional</button>
             <button className="small" onClick={() => add("non_functional")} title="A quality target: performance, security, cost…">+ Non-functional</button>
             <button className="small" onClick={() => setImporting(true)} title="Import requirements from a document (PDF, Word, Markdown, text)">⇪ Import</button>
-            {onJira && all.length > 0 && <button className="small" onClick={onJira} title="Preview, then push requirements to Jira as epics and stories">Jira ↗</button>}
+            <button className="small" onClick={() => setMeeting(true)}
+              title="Import requirements, decisions and action items from a meeting transcript or recording">🎙 Meeting</button>
+            {onJira && <button className="small" onClick={onJira} title="Push requirements to Jira, or pull Jira issues in as requirements">Jira ⇅</button>}
+            {onGitHub && all.length > 0 && <button className="small" onClick={onGitHub} title="Preview, then push requirements to GitHub as issues">GitHub ↗</button>}
           </div>
         )}
       </div>
       {importing && (
         <ImportRequirementsDialog pid={pid} branch={branch} onClose={() => setImporting(false)}
           onDone={(message, savedMemory) => { setImporting(false); toast(message); if (savedMemory) onMemoryChanged(); }} />
+      )}
+      {meeting && (
+        <MeetingImportDialog pid={pid} branch={branch} canAddKnowledge={!readOnly} onClose={() => setMeeting(false)}
+          onDone={(message, changed) => {
+            setMeeting(false); toast(message);
+            if (changed.memory) onMemoryChanged();
+            onMeetingImported?.(changed);
+          }} />
       )}
       {everything.length > 0 && (
         <div className="panel-filters">
@@ -185,6 +204,7 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
                   <span title={`Imported${r.source?.at ? ` on ${new Date(r.source.at).toLocaleString()}` : ""}`}> · from {sourceLabel(r.source)}</span>
                 )}
                 {jira[r.id] && <> · <JiraBadge link={jira[r.id]} /></>}
+                {github[r.id] && <> · <JiraBadge link={github[r.id]} /></>}
               </div>
               {isOpen && (
                 <div className="req-edit">

@@ -1,0 +1,60 @@
+suite: compliance
+description: Compliance remediation (compliance.review) is grounded in the failing controls, names real components, closes the biggest gaps first and proposes measurable NFRs that the project does not already have.
+cases:
+  - id: ai-support-soc2-gdpr
+    project: {template: ai-customer-support}
+    frameworks: [soc2, gdpr]
+    memory: ["Customers are in Germany and France; all personal data stays in the EU (eu-central-1)."]
+    expect:
+      min_steps: 3
+      min_requirements: 1
+      targets_any: [Claude, Orders DB]
+      controls_any: [SOC 2 CC6.8, GDPR Art. 25, SOC 2 CC6.7, GDPR Art. 32]
+      mentions_any: [guardrail, prompt injection, encrypt, KMS]
+      not_mentions: [certified, "guarantees compliance"]
+    ragas: [grounded_in_project, technically_sound]
+
+  - id: payments-plain-http-pci
+    project:
+      ops:
+        - {op: add_requirement, requirement: {id: REQ-001, title: Card checkout, description: Customers pay by credit card at checkout., kind: functional}}
+        - {op: add_node, node: {id: web, name: Storefront, type: client, technology: React}}
+        - {op: add_node, node: {id: api, name: Shop API, type: service, technology: Node.js on EC2, vendor: aws}}
+        - {op: add_node, node: {id: db, name: Shop DB, type: database, technology: MySQL on EC2, description: Orders and saved card numbers}}
+        - {op: add_edge, edge: {source: web, target: api, protocol: HTTP}}
+        - {op: add_edge, edge: {source: api, target: db, protocol: TCP}}
+    frameworks: [pci]
+    expect:
+      min_steps: 3
+      min_requirements: 2
+      targets_any: [Shop DB, Shop API, Storefront]
+      controls_any: [PCI DSS 3.3, PCI DSS 4.2, PCI DSS 8.3]
+      mentions_any: [tokeniz, Stripe, Adyen, Braintree, hosted]
+      mentions_all: [HTTPS]
+      not_mentions: [certified]
+    ragas: [grounded_in_project, technically_sound]
+
+  - id: telehealth-hipaa-evidence
+    project:
+      ops:
+        - {op: add_requirement, requirement: {id: REQ-001, title: Video visits, description: Patients see a doctor over video and the visit notes are stored in their health record., kind: functional}}
+        - {op: add_requirement, requirement: {id: REQ-002, title: Encryption, description: All patient data is encrypted at rest and in transit with TLS 1.2+., kind: non_functional, category: security}}
+        - {op: add_node, node: {id: app, name: Patient App, type: client, technology: React Native}}
+        - {op: add_node, node: {id: gw, name: API Gateway, type: gateway, technology: Amazon API Gateway, vendor: aws}}
+        - {op: add_node, node: {id: idp, name: Sign-in, type: security, technology: Amazon Cognito, vendor: aws}}
+        - {op: add_node, node: {id: visits, name: Visit Service, type: service, technology: AWS Fargate, vendor: aws}}
+        - {op: add_node, node: {id: ehr, name: Health Records DB, type: database, technology: Amazon Aurora PostgreSQL, vendor: aws}}
+        - {op: add_node, node: {id: video, name: Video Provider, type: external, technology: Twilio Video}}
+        - {op: add_edge, edge: {source: app, target: gw, protocol: HTTPS}}
+        - {op: add_edge, edge: {source: gw, target: idp, protocol: HTTPS}}
+        - {op: add_edge, edge: {source: gw, target: visits, protocol: HTTPS}}
+        - {op: add_edge, edge: {source: visits, target: ehr, protocol: TLS}}
+        - {op: add_edge, edge: {source: visits, target: video, protocol: HTTPS}}
+    frameworks: [hipaa]
+    expect:
+      min_steps: 3
+      targets_any: [Health Records DB, Video Provider, Sign-in]
+      controls_any: [HIPAA 164.312(b), HIPAA 164.308(b)(1), HIPAA 164.312(d)]
+      mentions_any: [BAA, business associate, audit, MFA]
+      not_mentions: [certified]
+    ragas: [grounded_in_project, technically_sound]

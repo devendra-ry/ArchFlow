@@ -30,3 +30,4 @@ backend/evals/reports/
 **/e2e/.auth/
 test-results/
 playwright-report/
+frontend/marketing/out/

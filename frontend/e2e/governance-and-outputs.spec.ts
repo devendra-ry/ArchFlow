@@ -58,13 +58,52 @@ test("requirements: import from a Markdown document, review and accept", async (
       "## Quality", "", "- Tracking pages must load in under 500 ms at the 95th percentile.", "",
     ].join("\n")),
   });
-  await expect(dialog.getByText(/read with the offline rules|read by the AI/)).toBeVisible();
+  await expect(dialog.getByText(/read with ArchFlow's Markdown reader · requirements found by the offline rules/)).toBeVisible();
   const add = dialog.getByRole("button", { name: /^Add \d+ requirements?$/ });
   await expect(add).toBeEnabled();
   await add.click();
   await expect(dialog).toHaveCount(0);
   await expect(page.locator(".req-row").filter({ hasText: /track a parcel/i })).toBeVisible();
   await expect(page.locator(".req-list")).toContainText(/from prd\.md/);
+});
+
+test("requirements: a document import still finishes when the server answers with plain JSON", async ({ page }) => {
+  await openNewProject(page, `Import json ${Date.now()}`);
+  await tab(page, "Requirements");
+  // Without the event-stream Accept header the server answers the old way: the whole proposal as JSON.
+  await page.route("**/requirements/import?*", (route) =>
+    route.continue({ headers: { ...route.request().headers(), accept: "application/json" } }));
+  await page.getByRole("button", { name: "⇪ Import" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import requirements from a document" });
+  await dialog.getByLabel("Document").setInputFiles({
+    name: "plain.md", mimeType: "text/markdown", buffer: Buffer.from("# Spec\n\n- The system shall export invoices.\n"),
+  });
+  await expect(dialog.getByRole("button", { name: /^Add \d+ requirements?$/ })).toBeEnabled();
+  await expect(dialog.getByText(/connection closed/)).toHaveCount(0);
+});
+
+test("requirements: a document import shows its steps and can be cancelled", async ({ page }) => {
+  await openNewProject(page, `Import cancel ${Date.now()}`);
+  await tab(page, "Requirements");
+  // Hold the upload so the progress panel stays up long enough to cancel.
+  let release = () => {};
+  await page.route("**/requirements/import?*", async (route) => {
+    await new Promise<void>((r) => { release = r; });
+    await route.continue().catch(() => {});
+  });
+  await page.getByRole("button", { name: "⇪ Import" }).click();
+  const dialog = page.getByRole("dialog", { name: "Import requirements from a document" });
+  await dialog.getByLabel("Document").setInputFiles({
+    name: "slow.md", mimeType: "text/markdown", buffer: Buffer.from("# Spec\n\n- The system shall export invoices.\n"),
+  });
+  const progress = dialog.getByRole("status");
+  await expect(progress).toContainText("Reading slow.md");
+  await expect(progress).toContainText("Find requirements");
+  await progress.getByRole("button", { name: "Cancel" }).click();
+  release();
+  await expect(dialog.getByText(/Import cancelled/)).toBeVisible();
+  await expect(progress).toHaveCount(0);
+  await expect(dialog.getByLabel("Document")).toBeEnabled();
 });
 
 test("approvals: request a review on a saved version and approve it", async ({ page }) => {
@@ -102,7 +141,8 @@ test("branch merge: merge a draft branch into main from the History panel", asyn
   await page.getByRole("button", { name: /Branches/ }).click();
   await page.locator(".branch-list li").filter({ hasText: "draft/cache" }).getByRole("button", { name: "Merge into…" }).click();
   const dialog = page.getByRole("dialog", { name: "Merge branches" });
-  await dialog.getByLabel("Target branch").selectOption("main");
+  await dialog.getByRole("combobox", { name: "Target branch" }).click();
+  await page.getByRole("listbox", { name: "Target branch" }).getByRole("option", { name: "main", exact: true }).click();
   await expect(dialog.locator(".merge-changes")).toContainText("Cart Cache");
   await dialog.getByRole("button", { name: "Merge into main" }).click();
   await expect(dialog).toHaveCount(0);

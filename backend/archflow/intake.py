@@ -17,6 +17,13 @@ constraints and open questions to project memory.
 Document text is untrusted: the prompt wraps it in ``<untrusted_data>`` and tells the model never to follow
 instructions inside it.
 
+With ``Accept: text/event-stream`` the upload answers with server-sent events instead: ``progress`` events
+{stage, message, done?, total?} while it reads (which library, which page, which model, which part), then one
+``done`` (the proposal), ``error`` {status, message} or ``cancelled``. Closing the connection cancels the import:
+pages and parts not started yet are skipped (a model call already running finishes and is discarded). The first
+event (and the ``X-Job-Id`` header) carries a ``job_id``: ``GET /api/projects/{pid}/jobs/{job_id}`` answers its
+status and last progress step and ``POST …/cancel`` stops it, from any API instance (scale.py).
+
 =======  ================================================  ============================================
 method   path                                              what
 =======  ================================================  ============================================
@@ -33,14 +40,19 @@ import json
 import logging
 import os
 import re
+import threading
+import time
 import zipfile
 from dataclasses import dataclass, field
+from importlib import metadata
 from typing import Any, Awaitable, Callable
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import agents, conversations, llm
+from . import agents, conversations, llm, scale
+from .agents import prompts
 from .db.types import now
 from .models import ProjectState, Requirement
 from .store import MEMORY_CATEGORIES
@@ -76,6 +88,31 @@ SCHEMA: dict[str, Any] = {"type": "object", "properties": {
     "open_questions": {"type": "array", "items": {"type": "string"}},
     "stakeholders": {"type": "array", "items": {"type": "string"}}},
     "required": ["requirements"]}
+
+
+Progress = Callable[[dict[str, Any]], None]
+Cancelled = Callable[[], bool]
+
+
+def _quiet(_: dict[str, Any]) -> None:
+    pass
+
+
+def _never() -> bool:
+    return False
+
+
+class ImportCancelled(Exception):
+    """The person cancelled the import (closed the upload) before it finished."""
+
+
+def _check(cancelled: Cancelled) -> None:
+    if cancelled():
+        raise ImportCancelled()
+
+
+def _step(stage: str, message: str, done: int | None = None, total: int | None = None) -> dict[str, Any]:
+    return {"stage": stage, "message": message, **({"done": done, "total": total} if total is not None else {})}
 
 
 class IntakeError(ValueError):
@@ -177,7 +214,20 @@ def _sections_from_lines(lines: list[tuple[str, int | None]], markdown: bool = F
     return out
 
 
-def _read_pdf(data: bytes) -> tuple[list[Section], int]:
+def _version(dist: str) -> str:
+    try:
+        return f"{dist} {metadata.version(dist)}"
+    except metadata.PackageNotFoundError:
+        return dist
+
+
+def reader_name(kind: str) -> str:
+    """The library that reads a document type, with its version (shown while importing)."""
+    return {"pdf": _version("pypdf"), "docx": _version("python-docx"),
+            "md": "ArchFlow's Markdown reader", "txt": "ArchFlow's text reader"}[kind]
+
+
+def _read_pdf(data: bytes, progress: Progress = _quiet, cancelled: Cancelled = _never) -> tuple[list[Section], int]:
     from pypdf import PdfReader
     from pypdf.errors import PdfReadError
 
@@ -188,7 +238,11 @@ def _read_pdf(data: bytes) -> tuple[list[Section], int]:
         pages = reader.pages
         n = len(pages)
         lines: list[tuple[str, int | None]] = []
+        last = min(n, MAX_PAGES)
         for i, page in enumerate(pages[:MAX_PAGES]):
+            _check(cancelled)
+            if i == 0 or (i + 1) % 5 == 0 or i + 1 == last:
+                progress(_step("read", f"Reading page {i + 1} of {last}", i + 1, last))
             for line in (page.extract_text() or "").splitlines():
                 lines.append((line, i + 1))
     except IntakeError:
@@ -254,7 +308,7 @@ def _decode(data: bytes) -> str:
     return data.decode("latin-1")
 
 
-def read_document(filename: str, data: bytes) -> Document:
+def read_document(filename: str, data: bytes, progress: Progress = _quiet, cancelled: Cancelled = _never) -> Document:
     """Extract sections from an uploaded file. Raises IntakeError (unsupported, too large, unreadable, empty)."""
     limit = max_bytes()
     if len(data) > limit:
@@ -263,8 +317,10 @@ def read_document(filename: str, data: bytes) -> Document:
         raise IntakeError("The file is empty.")
     kind = doc_type(filename, data)
     doc = Document(name=os.path.basename(filename) or "document", type=kind)
+    what = {"pdf": "PDF", "docx": "Word file", "md": "Markdown"}.get(kind, "text")
+    progress(_step("read", f"Reading the {what} with {reader_name(kind)}"))
     if kind == "pdf":
-        doc.sections, doc.pages = _read_pdf(data)
+        doc.sections, doc.pages = _read_pdf(data, progress, cancelled)
     elif kind == "docx":
         doc.sections = _read_docx(data)
     else:
@@ -274,6 +330,8 @@ def read_document(filename: str, data: bytes) -> Document:
         doc.sections = _sections_from_lines(lines, markdown=kind == "md")
     if not doc.chars:
         raise IntakeError("No text found in the document (a scanned PDF needs OCR first).")
+    progress(_step("read", f"Read {len(doc.sections)} section(s)"
+                           + (f" on {doc.pages} page(s)" if doc.pages else "") + f", {doc.chars:,} characters"))
     return doc
 
 
@@ -567,23 +625,48 @@ def merge(doc: Document, results: list[dict[str, Any]], parts: list[list[Section
     return {"requirements": proposals, **lists, "stakeholders": stakeholders}
 
 
+def extract_model(org_id: str | None, version: str | None = None) -> str:
+    """The model the ``intake.extract`` agent calls first for this org ("" when none is configured)."""
+    models = llm.status(org_id)["groups"].get(prompts.get(PROMPT, version).group) or []
+    return models[0] if models else ""
+
+
 def propose(doc: Document, state: ProjectState, org_id: str | None, *, use_ai: bool | None = None,
-            version: str | None = None) -> dict[str, Any]:
+            version: str | None = None, progress: Progress = _quiet,
+            cancelled: Cancelled = _never) -> dict[str, Any]:
     """Extract proposals from a read document (not applied). ``engine`` is llm, offline or mixed."""
     parts = chunks(doc)
     notes: list[str] = []
     if len(parts) > MAX_CHUNKS:
         notes.append(f"The document is long: only the first {MAX_CHUNKS} of {len(parts)} parts were read.")
         parts = parts[:MAX_CHUNKS]
+    progress(_step("split", f"Split into {len(parts)} part(s) of up to {CHUNK_CHARS:,} characters at section "
+                            "boundaries"))
+    _check(cancelled)
     use_ai = llm.available(org_id) if use_ai is None else use_ai
+    model = extract_model(org_id, version) if use_ai else ""
     results: list[dict[str, Any]] = []
     engines: set[str] = set()
     if use_ai:
         existing = existing_summary(state)
-        out = agents.parallel({str(i): (lambda i=i, part=part: llm_extract(doc, part, i, len(parts), existing,
-                                                                         org_id, version))
-                               for i, part in enumerate(parts)},
+        who = model or "the AI"
+        progress(_step("extract", f"Extracting requirements with {who}", 0, len(parts)))
+        finished = [0]
+        lock = threading.Lock()
+
+        def extract(i: int, part: list[Section]) -> dict[str, Any]:
+            _check(cancelled)  # parts still queued when the person cancels are never sent to the model
+            try:
+                return llm_extract(doc, part, i, len(parts), existing, org_id, version)
+            finally:
+                with lock:
+                    finished[0] += 1
+                    progress(_step("extract", f"Extracting with {who}: part {i + 1} done "
+                                              f"({finished[0]} of {len(parts)})", finished[0], len(parts)))
+
+        out = agents.parallel({str(i): (lambda i=i, part=part: extract(i, part)) for i, part in enumerate(parts)},
                               name="intake.extract", org_id=org_id, question=f"Extract requirements from {doc.name}")
+        _check(cancelled)
         for i, part in enumerate(parts):
             res = out.get(str(i))
             if isinstance(res, Exception):
@@ -596,13 +679,22 @@ def propose(doc: Document, state: ProjectState, org_id: str | None, *, use_ai: b
         if "offline" in engines:
             notes.append("The AI could not read some parts; those were read with the offline rules.")
     else:
-        results = [offline_extract(part) for part in parts]
+        progress(_step("extract", 'No AI model is configured: reading "shall / must / should" sentences and '
+                                  "requirement bullets with the offline rules", 0, len(parts)))
+        for i, part in enumerate(parts):
+            _check(cancelled)
+            results.append(offline_extract(part))
+            progress(_step("extract", f"Offline rules: part {i + 1} of {len(parts)} done", i + 1, len(parts)))
         engines.add("offline")
+    found = sum(len(r.get("requirements") or []) for r in results)
+    progress(_step("compare", f"Checking {found} proposal(s) for duplicates and conflicts with "
+                              f"{len(state.requirements)} existing requirement(s)"))
     merged = merge(doc, results, parts, state)
+    used = {"library": reader_name(doc.type), "model": model if "llm" in engines else ""}
     engine = "mixed" if len(engines) > 1 else engines.pop()
     return {"engine": engine, "notes": notes,
             "file": {"name": doc.name, "type": doc.type, "pages": doc.pages, "sections": len(doc.sections),
-                     "chars": doc.chars, "chunks": len(parts)}, **merged}
+                     "chars": doc.chars, "chunks": len(parts)}, "reader": used, **merged}
 
 
 # --------------------------------------------------------------------------- accept
@@ -645,10 +737,90 @@ class AcceptIn(BaseModel):
 
 
 # --------------------------------------------------------------------------- routes
+def _sse(event: str, data: dict[str, Any]) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
+
+
+def stream_job(work: Callable[[Progress, Cancelled], dict[str, Any]], *, running: set[Any], first: dict[str, Any],
+               on_done: Callable[[dict[str, Any]], Awaitable[None]], on_error: Callable[[str], None],
+               on_cancel: Callable[[], None], failure: str, what: str,
+               job: dict[str, Any] | None = None) -> StreamingResponse:
+    """Run ``work(progress, cancelled)`` in a thread and answer with server-sent events: ``progress`` while it runs,
+    then ``done`` (its result), ``error`` {status, message} (an IntakeError, or ``failure`` for anything else) or
+    ``cancelled``. Closing the connection cancels the job (``cancelled()`` turns true), and so does
+    ``POST /api/projects/{pid}/jobs/{job_id}/cancel`` on any instance. Status and the last progress step are kept in
+    ``scale.job_store()`` (``job`` adds fields such as ``project_id``). Used by document and meeting imports."""
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
+    cancel = threading.Event()
+    jobs = scale.job_store()
+    job_id = scale.new_job_id("import")
+    first = {**first, "job_id": job_id}
+    jobs.create(job_id, {**(job or {}), "status": "running", "progress": first, "created_at": time.time(),
+                         "finished_at": None, "error": None})
+    cancelled = scale.cancel_check(job_id, cancel.is_set, jobs)
+
+    def emit(kind: str, payload: dict[str, Any]) -> None:
+        loop.call_soon_threadsafe(queue.put_nowait, (kind, payload))
+
+    def progress(step: dict[str, Any]) -> None:
+        emit("progress", step)
+        jobs.update(job_id, progress=step)
+
+    def finish(status: str, error: str | None = None) -> None:
+        jobs.update(job_id, status=status, error=error, finished_at=time.time())
+
+    def run() -> None:
+        try:
+            result = work(progress, cancelled)
+            finish("done")
+            emit("done", result)
+        except ImportCancelled:
+            finish("cancelled")
+            emit("cancelled", {})  # ends the queue (and the stream, when cancelled from elsewhere)
+        except IntakeError as exc:
+            finish("failed", str(exc))
+            emit("error", {"status": exc.status, "message": str(exc)})
+        except Exception:  # noqa: BLE001 - reported to the person, details logged
+            log.exception("%s failed", what)
+            finish("failed", failure)
+            emit("error", {"status": 500, "message": failure})
+
+    task = asyncio.ensure_future(asyncio.to_thread(run))
+    running.add(task)
+    task.add_done_callback(running.discard)
+
+    async def events():
+        ended = False
+        try:
+            yield _sse("progress", first)
+            while True:
+                kind, payload = await queue.get()
+                if kind == "done":
+                    await on_done(payload)
+                elif kind == "error":
+                    on_error(payload["message"])
+                elif kind == "cancelled":
+                    on_cancel()  # cancelled through the jobs API while the stream was still open
+                ended = kind != "progress"
+                yield _sse(kind, payload)
+                if ended:
+                    return
+        finally:
+            if not ended:  # the person cancelled: the connection closed before the result was sent
+                cancel.set()
+                on_cancel()
+
+    return StreamingResponse(events(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Job-Id": job_id})
+
+
 def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Callable[[str, str], ProjectState],
                     commit_ops: Callable[..., Awaitable[tuple[ProjectState, list[str]]]],
-                    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]]) -> None:
+                    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]],
+                    notify: Callable[..., None] | None = None) -> None:
     edit = authz.project("edit")
+    running: set[asyncio.Future[Any]] = set()  # imports still reading after their stream closed
 
     def log_outcome(pid: str, branch: str, actor: str, line: str) -> None:
         state = store.get_state(pid, branch)
@@ -672,18 +844,39 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
                 log_outcome(pid, branch, a.actor, f"import {name} rejected: too large")
                 raise HTTPException(413, too_big)
             data.append(chunk)
+        body = b"".join(data)
+
+        async def proposed(result: dict[str, Any]) -> None:
+            r = result["requirements"]
+            flagged = sum(1 for p in r if p["duplicates"] or p["conflicts"])
+            log_outcome(pid, branch, a.actor, f"import {name}: proposed {len(r)} requirement(s)"
+                        + (f", {flagged} flagged" if flagged else "") + f" ({result['engine']})")
+            await broadcast(pid, branch, {"type": "activity", "actor": a.actor})
+
+        if "text/event-stream" in request.headers.get("accept", ""):
+            return stream_import(pid, branch, a, name, body, state, proposed)
         try:
-            doc = await asyncio.to_thread(read_document, name, b"".join(data))
+            doc = await asyncio.to_thread(read_document, name, body)
         except IntakeError as exc:
             log_outcome(pid, branch, a.actor, f"import {name} rejected: {exc}")
             raise HTTPException(exc.status, str(exc)) from exc
         result = await asyncio.to_thread(propose, doc, state, a.org_id)
-        r = result["requirements"]
-        flagged = sum(1 for p in r if p["duplicates"] or p["conflicts"])
-        log_outcome(pid, branch, a.actor, f"import {name}: proposed {len(r)} requirement(s)"
-                    + (f", {flagged} flagged" if flagged else "") + f" ({result['engine']})")
-        await broadcast(pid, branch, {"type": "activity", "actor": a.actor})
+        await proposed(result)
         return result
+
+    def stream_import(pid: str, branch: str, a: Any, name: str, body: bytes, state: ProjectState,
+                      proposed: Callable[[dict[str, Any]], Awaitable[None]]) -> StreamingResponse:
+        def work(progress: Progress, cancelled: Cancelled) -> dict[str, Any]:
+            doc = read_document(name, body, progress, cancelled)
+            return propose(doc, state, a.org_id, progress=progress, cancelled=cancelled)
+
+        return stream_job(work, running=running, first=_step("upload", f"Uploaded {name} ({len(body) / 1024:,.0f} KB)"),
+                          on_done=proposed, failure="Something went wrong while reading the document.",
+                          on_error=lambda msg: log_outcome(pid, branch, a.actor, f"import {name} rejected: {msg}"),
+                          on_cancel=lambda: log_outcome(pid, branch, a.actor, f"import {name} cancelled"),
+                          what=f"importing {name} into {pid}",
+                          job={"kind": "document_import", "project_id": pid, "branch": branch, "file": name,
+                               "created_by": a.actor})
 
     @app.post("/api/projects/{pid}/requirements/import/accept")
     async def accept_import(pid: str, body: AcceptIn, branch: str = "main", a=Depends(edit)):
@@ -703,8 +896,11 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any, state_or_404: Calla
                 saved.append(item)
         if saved:
             await broadcast(pid, branch, {"type": "memory", "actor": a.actor, "added": [m["text"] for m in saved]})
-        log_outcome(pid, branch, a.actor, f"import {name}: accepted {len(ops)} requirement(s)"
-                    + (f", saved {len(saved)} note(s) to memory" if body.memory else ""))
+        line = (f"import {name}: accepted {len(ops)} requirement(s)"
+                + (f", saved {len(saved)} note(s) to memory" if body.memory else ""))
+        log_outcome(pid, branch, a.actor, line)
+        if notify and ops:
+            notify(a.org_id, pid, "import", f"{a.actor} imported requirements from {name}", line, branch=branch)
         added = [r.id for r in (state.requirements.values() if state else []) if r.source.get("at") == at]
         return {"added": added, "summary": summary, "memory": saved,
                 **({"state": state.model_dump()} if state else {})}

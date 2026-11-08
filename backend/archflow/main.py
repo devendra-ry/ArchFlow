@@ -24,7 +24,8 @@ from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse, Red
 from pydantic import BaseModel, Field
 
 from . import (accounts, ai, approvals, openspec_service, diagram_export, auth, catalog, chat, collab_sync, comments, conversations,
-               decisions, lld, llm, history, intake, observability, review, secrets_box, suggestions, usage, users, exports, diagrams, jira)
+               decisions, lld, llm, history, intake, observability, review, secrets_box, suggestions, usage, users, exports, diagrams, jira,
+               costs, integrations, knowledge, meetings, scale, compliance, mfa, project_roles, sso, generation)
 from .analysis import full_analysis, trace_requirement
 from .codegraph.service import CodeGraphService
 from .codegraph.service import register_routes as register_codegraph_routes
@@ -133,10 +134,12 @@ WRITE_ROLES = {r for r in ROLES if can(r, "edit")}
 
 # --------------------------------------------------------------------------- realtime hub
 class Hub:
-    """Fan-out of state changes and presence for each (project, branch) room."""
+    """Fan-out of state changes and presence for each (project, branch) room. With ARCHFLOW_REDIS_URL the
+    ``bus`` (scale.RoomBus) carries messages and presence to the other API instances."""
 
-    def __init__(self) -> None:
+    def __init__(self, bus: scale.RoomBus | None = None) -> None:
         self.rooms: dict[str, dict[WebSocket, dict[str, Any]]] = {}
+        self.bus = bus or scale.RoomBus()
 
     @staticmethod
     def key(pid: str, branch: str) -> str:
@@ -144,14 +147,21 @@ class Hub:
 
     async def join(self, room: str, ws: WebSocket, user: dict[str, Any]) -> None:
         self.rooms.setdefault(room, {})[ws] = user
+        await self.bus.present(room, id(ws), user)
         await self.broadcast_presence(room)
 
     async def leave(self, room: str, ws: WebSocket) -> None:
         self.rooms.get(room, {}).pop(ws, None)
+        await self.bus.absent(room, id(ws))
         await self.broadcast(room, {"type": "left", "client_id": id(ws)})
         await self.broadcast_presence(room)
 
     async def broadcast(self, room: str, msg: dict[str, Any], exclude: WebSocket | None = None) -> None:
+        await self.deliver(room, msg, exclude)
+        await self.bus.publish(room, msg)  # other instances (no-op without Redis)
+
+    async def deliver(self, room: str, msg: dict[str, Any], exclude: WebSocket | None = None) -> None:
+        """Send to this instance's sockets in the room."""
         data = json.dumps(msg, default=str)
         for ws in list(self.rooms.get(room, {})):
             if ws is exclude:
@@ -163,6 +173,7 @@ class Hub:
 
     async def broadcast_presence(self, room: str) -> None:
         users_ = [{**u, "client_id": id(ws)} for ws, u in self.rooms.get(room, {}).items()]
+        users_ = await self.bus.presence(room, users_)
         await self.broadcast(room, {"type": "presence", "users": users_})
 
 
@@ -176,12 +187,17 @@ def create_app(store: Store | None = None) -> FastAPI:
     llm.set_org_config_resolver(store.get_ai_config)  # models chosen in AI settings
     # Every LLM call is recorded (tokens, estimated cost) and checked against the org's monthly budget.
     budgets = usage.install(store)
+    scale.install()  # shared rate limits when ARCHFLOW_REDIS_URL is set; in-process otherwise
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         # The remote MCP endpoint's session manager must run for the lifetime of the app.
-        async with app.state.mcp.session_manager.run():
-            yield
+        hub.bus.start(hub.deliver)  # cross-instance fan-out (only with ARCHFLOW_REDIS_URL)
+        try:
+            async with app.state.mcp.session_manager.run():
+                yield
+        finally:
+            await hub.bus.stop()
 
     app = FastAPI(title="ArchFlow", version="0.1.0", lifespan=lifespan)
     origins = users.allowed_origins()
@@ -246,7 +262,7 @@ def create_app(store: Store | None = None) -> FastAPI:
     def api_health():
         """Liveness: the process answers (no dependency checks, so it is cheap to poll)."""
         return {"ok": True, "ai_mode": ai.MODE, "model": ai.MODEL, "llm": llm.status(),
-                "export": {"interactive": diagram_export.available()}}
+                "export": {"interactive": diagram_export.available()}, "redis": scale.status(hub.bus)}
 
     @app.get("/api/ready")
     def api_ready():
@@ -259,8 +275,10 @@ def create_app(store: Store | None = None) -> FastAPI:
             return JSONResponse(status_code=503, content={"ready": False, "database": f"{type(exc).__name__}"})
         head = migrate.head()
         ok = revision == head
+        # Redis is reported, not required: without it each instance falls back to in-process state.
         return JSONResponse(status_code=200 if ok else 503,
-                            content={"ready": ok, "database": store.dialect, "schema": revision, "expected": head})
+                            content={"ready": ok, "database": store.dialect, "schema": revision, "expected": head,
+                                     "redis": scale.status(hub.bus, ping=True)})
 
     @app.get("/api/catalog")
     def get_catalog():
@@ -272,6 +290,10 @@ def create_app(store: Store | None = None) -> FastAPI:
 
     # ---- accounts, orgs, members, invites, org AI settings ----
     accounts.register_routes(app, store, authz)
+    # ---- two-step sign-in, OIDC single sign-on, per-project roles (mfa.py, sso.py, project_roles.py) ----
+    mfa.register_routes(app, store, authz)
+    sso.register_routes(app, store, authz)
+    project_roles.register_routes(app, store, authz)
     usage.register_routes(app, store, authz, budgets)
     observability.install(store)
     observability.register_routes(app, store, authz)
@@ -282,7 +304,8 @@ def create_app(store: Store | None = None) -> FastAPI:
         if org_id:
             authz.check_org(user, org_id, "read")
             return store.list_projects(org_id)
-        out = [p for o in store.list_user_orgs(user["id"]) for p in store.list_projects(o["id"])]
+        out = [p for o in store.list_user_orgs(user["id"]) if not authz.policy_block(user, o["id"], o["role"])
+               for p in store.list_projects(o["id"])]
         return sorted(out, key=lambda p: p["created_at"], reverse=True)
 
     @app.post("/api/projects", status_code=201)
@@ -322,12 +345,15 @@ def create_app(store: Store | None = None) -> FastAPI:
         state = state_or_404(pid, branch)
         version = store.commit(pid, branch, message, author, state)
         await hub.broadcast(Hub.key(pid, branch), {"type": "versions", "actor": author})
+        integrations.notify(store, project_or_404(pid).get("org_id"), pid, "version",
+                            f"{author} saved v{version['number']} on {branch}", message, branch=branch)
         return version
 
     # ---- repository analysis (code graph → reconstruction, drift, impact); see codegraph/service.py ----
     codegraph = CodeGraphService(store, commit_ops, commit_version)
     app.state.codegraph = codegraph
     register_codegraph_routes(app, codegraph, authz=authz)
+    scale.register_routes(app, authz=authz)  # job status / cancel, answered by any instance
 
     @app.post("/api/projects/{pid}/commit", status_code=201)
     async def commit(pid: str, body: CommitIn, branch: str = "main", a: Access = Depends(edit)):
@@ -557,11 +583,15 @@ def create_app(store: Store | None = None) -> FastAPI:
         memory = conversations.memory_block(store, pid)
         if memory:
             context += "\n" + memory
+        kb = await asyncio.to_thread(knowledge.context_block, store, pid, body.question, a.org_id)
         try:
-            answer = await asyncio.to_thread(ai.claude_ask, context, body.question, a.org_id)
+            extra = {"knowledge": kb} if kb else {}
+            answer = await asyncio.to_thread(lambda: ai.claude_ask(context, body.question, a.org_id, **extra))
         except ai.AIUnavailable as exc:
-            raise HTTPException(503, f"{exc}. Set GEMINI_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY), or add "
-                                     "your organization's key in AI settings, to use the project assistant.") from exc
+            hint = ("Fix the provider account, or add another provider's key in AI settings." if llm.available(a.org_id)
+                    else "Set GEMINI_API_KEY (or ANTHROPIC_API_KEY / OPENAI_API_KEY), or add your organization's key "
+                         "in AI settings, to use the project assistant.")
+            raise HTTPException(503, f"{exc}. {hint}") from exc
         return {"answer": answer}
 
     # ---- cloud conversion ----
@@ -653,11 +683,27 @@ def create_app(store: Store | None = None) -> FastAPI:
     # branch merge: three-way diff, conflict resolution (optionally AI-assisted), applied as ops (merge.py)
     register_merge_routes(app, store, authz=authz, commit_ops=commit_ops, broadcast=broadcast_room)
     history.register_routes(app, store, authz=authz, state_or_404=state_or_404, commit_ops=commit_ops)
+    def notify(org_id: str | None, pid: str, event: str, title: str, text: str, branch: str = "main") -> None:
+        integrations.notify(store, org_id, pid, event, title, text, branch=branch)
+
     intake.register_routes(app, store, authz=authz, state_or_404=state_or_404, commit_ops=commit_ops,
-                           broadcast=broadcast_room)
+                           broadcast=broadcast_room, notify=notify)
+    # ---- meeting transcripts and recordings → requirements, decisions, action items (meetings.py) ----
+    meetings.register_routes(app, store, authz=authz, state_or_404=state_or_404, commit_ops=commit_ops,
+                             broadcast=broadcast_room, notify=notify)
+    # ---- project knowledge base: documents, hybrid search, cited answers (knowledge.py) ----
+    knowledge.register_routes(app, store, authz=authz, broadcast=broadcast_room)
+    # ---- cost estimate of the architecture (costs.py) ----
+    costs.register_routes(app, store, authz=authz, state_or_404=state_or_404)
+    # ---- compliance frameworks: SOC 2, HIPAA, GDPR, PCI DSS, ISO 27001 (compliance.py) ----
+    compliance.register_routes(app, store, authz=authz, state_or_404=state_or_404)
+    # ---- generated infrastructure as code, tests and documents (generation.py) ----
+    generation.register_routes(app, store, authz=authz, state_or_404=state_or_404)
+    # ---- GitHub Issues, Confluence, Slack and Teams (integrations.py) ----
+    integrations.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room)
     # ---- spec exports (Markdown, print/PDF, JSON, YAML) and coding-agent guides (exports.py) ----
     exports.register_routes(app, store, authz=authz, state_or_404=state_or_404)
-    jira.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room)
+    jira.register_routes(app, store, authz=authz, state_or_404=state_or_404, broadcast=broadcast_room, commit_ops=commit_ops)
 
     # ---- OpenSpec: spec-driven changes stored per project (openspec_service.py) ----
     def openspec_context(pid: str, branch: str) -> dict[str, Any]:
@@ -746,9 +792,12 @@ def create_app(store: Store | None = None) -> FastAPI:
         if not user:
             await ws.close(code=4401)
             return
-        project = store.get_project(pid)
-        if (not project or store.get_role(project["org_id"], user["id"]) is None
-                or store.get_state(pid, branch) is None):
+        try:
+            authz.check_project(user, pid, "read")
+        except HTTPException:
+            await ws.close(code=4404)
+            return
+        if store.get_state(pid, branch) is None:
             await ws.close(code=4404)
             return
         await ws.accept()
@@ -769,7 +818,7 @@ def create_app(store: Store | None = None) -> FastAPI:
 
     # ---- remote MCP server (Streamable HTTP + OAuth 2.1) ----
     mcp = build_remote_mcp(Services(store=store, commit_ops=commit_ops, commit_version=commit_version,
-                                    ai_command=run_ai_command, codegraph=codegraph))
+                                    ai_command=run_ai_command, codegraph=codegraph, broadcast=broadcast_room))
     provider: auth.ArchFlowOAuthProvider = mcp._archflow_provider
     app.state.mcp = mcp
 
@@ -794,19 +843,38 @@ def create_app(store: Store | None = None) -> FastAPI:
         email = users.normalize_email(str(form.get("email", "")))[:320]
         password = str(form.get("password", ""))[:users.MAX_PASSWORD]
         nxt = safe_next(str(form.get("next", "")))
+        mfa_token = str(form.get("mfa_token", ""))[:200]
+        if mfa_token:  # second step: the code from the authenticator app (or a recovery code)
+            challenge = mfa.peek_challenge(store, mfa_token)
+            if not challenge:
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "This sign-in has expired. Sign in again."), 401)
+            try:
+                ok = mfa.check_code(store, challenge["user_id"], str(form.get("code", ""))[:40])
+            except HTTPException as exc:
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), str(exc.detail), mfa_token=mfa_token), 429)
+            if not ok or not mfa.finish_challenge(store, mfa_token):
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "That code is not right.", mfa_token=mfa_token), 401)
+            user_id, method = challenge["user_id"], challenge["auth_method"]
+        else:
+            user_id, method = None, "password"
         key = users.limiter_key(email, accounts.client_ip(request))
         if users.login_limiter.check(key):
             return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(),
                                                 "Too many sign-in attempts. Try again later.", email), 429)
-        rec = store.get_user_by_email(email, with_hash=True)
-        if not users.verify_password(password, rec["password_hash"] if rec else None):
-            users.login_limiter.failure(key)
-            return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "Invalid email or password.", email), 401)
-        users.login_limiter.success(key)
-        store.touch_login(rec["id"])
+        if user_id is None:
+            rec = store.get_user_by_email(email, with_hash=True)
+            if not users.verify_password(password, rec["password_hash"] if rec else None):
+                users.login_limiter.failure(key)
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(), "Invalid email or password.", email), 401)
+            users.login_limiter.success(key)
+            user_id = rec["id"]
+            if store.mfa_enabled(user_id):
+                return HTMLResponse(auth.login_page(nxt or "", users.frontend_url(),
+                                                    mfa_token=mfa.start_challenge(store, user_id, "password")))
+        store.touch_login(user_id)
         resp: Response = (RedirectResponse(nxt, status_code=303) if nxt else
                           HTMLResponse("<p>Signed in. You can close this window and return to your app.</p>"))
-        accounts.set_session_cookie(resp, users.create_session(store, rec["id"], request.headers.get("user-agent", "")))
+        accounts.set_session_cookie(resp, users.create_session(store, user_id, request.headers.get("user-agent", ""), method))
         return resp
 
     @app.get("/oauth/consent", response_class=HTMLResponse)
@@ -817,7 +885,8 @@ def create_app(store: Store | None = None) -> FastAPI:
         user = authz.session_user(request)
         if not user:
             return to_login(request_id)
-        return HTMLResponse(auth.consent_page(req, request_id, store.list_user_orgs(user["id"]), user, WRITE_ROLES))
+        orgs = [o for o in store.list_user_orgs(user["id"]) if not authz.policy_block(user, o["id"], o["role"])]
+        return HTMLResponse(auth.consent_page(req, request_id, orgs, user, WRITE_ROLES))
 
     @app.post("/oauth/consent")
     async def consent_submit(req: Request):
@@ -831,7 +900,7 @@ def create_app(store: Store | None = None) -> FastAPI:
             if not user:
                 return to_login(request_id)
             role = store.get_role(org_id, user["id"])
-            if role is None:
+            if role is None or authz.policy_block(user, org_id, role):  # the org's SSO / MFA rules apply here too
                 pending = provider.pending_request(request_id)
                 if not pending:
                     return HTMLResponse("<p>This authorization request has expired.</p>", 400)

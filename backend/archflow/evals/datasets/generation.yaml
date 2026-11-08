@@ -1,0 +1,83 @@
+suite: generation
+description: Generated infrastructure as code (generate.iac), tests (generate.tests) and documents (generate.docs) stay well-formed, cover the design's requirements and components, and invent nothing.
+cases:
+  - id: gen-terraform-aws-support
+    project: {template: ai-customer-support}
+    name: Support Bot
+    kind: iac
+    target: terraform
+    cloud: aws
+    expect:
+      min_files: 4
+      paths_any: [terraform/main.tf]
+      mentions_all: [Orders DB, provider]
+      not_mentions: [azurerm_, google_]
+    ragas: [grounded_in_project, technically_sound]
+
+  - id: gen-k8s-eu-shop
+    project:
+      ops:
+        - {op: add_requirement, requirement: {id: REQ-001, title: EU data residency, description: All customer data stays in the EU., kind: non_functional, category: compliance}}
+        - {op: add_requirement, requirement: {id: REQ-002, title: Availability, description: The shop is available 99.95% of the time., kind: non_functional, category: availability}}
+        - {op: add_node, node: {id: web, name: Storefront, type: client, technology: React}}
+        - {op: add_node, node: {id: api, name: Shop API, type: service, technology: FastAPI on Kubernetes}}
+        - {op: add_node, node: {id: db, name: Shop DB, type: database, technology: PostgreSQL}}
+        - {op: add_edge, edge: {source: web, target: api, protocol: HTTPS}}
+        - {op: add_edge, edge: {source: api, target: db, protocol: SQL}}
+    name: Shop
+    kind: iac
+    target: k8s
+    expect:
+      paths_any: [k8s/shop-api.yaml]
+      mentions_all: [Deployment, readinessProbe]
+      not_mentions: [Kafka, MongoDB]
+    ragas: [grounded_in_project, technically_sound]
+
+  - id: gen-gherkin-support
+    project: {template: ai-customer-support}
+    name: Support Bot
+    kind: tests
+    target: gherkin
+    expect:
+      covers_requirements: [REQ-003]
+      paths_any: [.feature]
+      mentions_all: [Scenario]
+    ragas: [grounded_in_project]
+
+  - id: gen-pytest-checkout
+    project:
+      ops:
+        - {op: add_requirement, requirement: {id: REQ-001, title: Checkout, kind: functional, actors: [Customer], acceptance_criteria: ["Customers can pay by card", "A declined card shows a clear error and no order is created"]}}
+        - {op: add_node, node: {id: api, name: Checkout API, type: service, technology: FastAPI, requirement_ids: [REQ-001]}}
+        - {op: add_node, node: {id: pay, name: Stripe, type: external, technology: Stripe API}}
+        - {op: add_edge, edge: {source: api, target: pay, protocol: HTTPS}}
+    name: Shop
+    kind: tests
+    target: pytest
+    expect:
+      covers_requirements: [REQ-001]
+      mentions_any: [declined, decline]
+      mentions_all: [Stripe]
+    ragas: [grounded_in_project, technically_sound]
+
+  - id: gen-srs-support
+    project: {template: ai-customer-support}
+    name: Support Bot
+    kind: docs
+    target: srs
+    expect:
+      paths_any: [docs/SRS.md]
+      covers_requirements: [REQ-003, REQ-005]
+      mentions_all: [Purpose, Scope]
+    ragas: [grounded_in_project, faithfulness]
+
+  - id: gen-runbook-support
+    project: {template: ai-customer-support}
+    name: Support Bot
+    kind: docs
+    target: runbook
+    expect:
+      min_files: 3
+      mentions_all: [Orders DB, Health checks, Alerts]
+      not_mentions: [Cassandra]
+    ragas: [grounded_in_project, technically_sound]

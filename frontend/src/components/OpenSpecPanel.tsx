@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { OpenSpecChange, OpenSpecJob, OpenSpecOverview } from "../types";
 import { Markdown } from "./Markdown";
+import { Select } from "./Select";
 
 interface Props {
   pid: string;
@@ -152,9 +153,8 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
               --strict</code> checks it{overview?.ai ? " and the AI fixes any issues" : ""}. Everything is saved in the project.
             </p>
             <div className="row gap">
-              <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Coding agent" disabled={running}>
-                {targets.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
-              </select>
+              <Select value={target} onChange={setTarget} aria-label="Coding agent" disabled={running}
+                options={targets.map((t) => ({ value: t.key, label: t.name }))} />
               <input className="grow" value={extra} onChange={(e) => setExtra(e.target.value)} disabled={running}
                 placeholder="Instructions for this change (optional): conventions, libraries, what to leave out…" />
               <button className="primary" disabled={running || readOnly} onClick={start}>
@@ -222,9 +222,8 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
                   </button>
                 ))}
               </div>
-              <select value={target} onChange={(e) => setTarget(e.target.value)} aria-label="Coding agent for the prompt" className="os-target">
-                {targets.map((t) => <option key={t.key} value={t.key}>{t.name}</option>)}
-              </select>
+              <Select size="sm" value={target} onChange={setTarget} aria-label="Coding agent for the prompt" className="os-target"
+                options={targets.map((t) => ({ value: t.key, label: t.name }))} />
             </div>
             {tab === PROMPT ? <pre className="prompt-out">{detail.prompt}</pre>
               : editing !== null ? (

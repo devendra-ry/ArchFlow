@@ -1,0 +1,48 @@
+suite: costs
+description: Cost recommendations (costs.optimize) are grounded in the priced line items, name real components, respect the quality requirements and go for the biggest savings first.
+cases:
+  - id: llm-heavy-support-platform
+    project: {template: ai-customer-support}
+    assumptions: {monthly_active_users: 50000}
+    expect:
+      min_recommendations: 2
+      targets_any: [Claude]
+      mentions_any: [cache, caching, smaller model, routing, route]
+    ragas: [grounded_in_project, technically_sound]
+
+  - id: over-budget-ha-web-app
+    project:
+      ops:
+        - {op: add_requirement, requirement: {id: REQ-001, title: Monthly infrastructure budget, description: The platform must cost less than $800 per month to run., kind: non_functional, category: cost}}
+        - {op: add_requirement, requirement: {id: REQ-002, title: Availability, description: The shop is available 99.95% of the time., kind: non_functional, category: availability}}
+        - {op: add_node, node: {id: web, name: Storefront, type: client, technology: React, vendor: aws, catalog_id: oss-react}}
+        - {op: add_node, node: {id: api, name: Shop API, type: service, technology: AWS Fargate, vendor: aws, catalog_id: aws-ecs-fargate}}
+        - {op: add_node, node: {id: db, name: Shop DB, type: database, technology: Amazon RDS for PostgreSQL, vendor: aws, catalog_id: aws-rds-postgres}}
+        - {op: add_node, node: {id: cache, name: Session Cache, type: cache, technology: Amazon ElastiCache, vendor: aws, catalog_id: aws-elasticache}}
+        - {op: add_node, node: {id: search, name: Product Search, type: database, technology: Amazon OpenSearch, vendor: aws, catalog_id: aws-opensearch}}
+        - {op: add_edge, edge: {source: web, target: api, protocol: HTTPS}}
+        - {op: add_edge, edge: {source: api, target: db, protocol: SQL}}
+        - {op: add_edge, edge: {source: api, target: cache, protocol: RESP}}
+        - {op: add_edge, edge: {source: api, target: search, protocol: HTTPS}}
+    assumptions: {monthly_active_users: 20000, peak_rps: 600, storage_gb: 200}
+    expect:
+      min_recommendations: 2
+      targets_any: [Shop DB, Product Search, Session Cache, Shop API]
+      within_budget_first: true
+      not_mentions: ["single-AZ", "single AZ"]
+    ragas: [grounded_in_project, technically_sound]
+
+  - id: low-traffic-internal-tool
+    project:
+      ops:
+        - {op: add_requirement, requirement: {id: REQ-001, title: Internal users, description: About 200 employees use the tool during office hours., kind: non_functional, category: scalability}}
+        - {op: add_node, node: {id: ui, name: Admin UI, type: client, technology: React}}
+        - {op: add_node, node: {id: svc, name: Reporting Service, type: service, technology: Cloud Run, vendor: gcp, catalog_id: gcp-cloud-run}}
+        - {op: add_node, node: {id: db, name: Reports DB, type: database, technology: Cloud SQL for PostgreSQL, vendor: gcp, catalog_id: gcp-cloud-sql}}
+        - {op: add_edge, edge: {source: ui, target: svc, protocol: HTTPS}}
+        - {op: add_edge, edge: {source: svc, target: db, protocol: SQL}}
+    expect:
+      min_recommendations: 1
+      targets_any: [Reports DB, Reporting Service]
+      not_mentions: [Kafka, Kubernetes]
+    ragas: [grounded_in_project, technically_sound]

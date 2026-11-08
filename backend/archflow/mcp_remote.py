@@ -24,7 +24,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 
-from . import approvals, auth, authz, catalog, lld, exports, diagrams
+from . import approvals, auth, authz, catalog, lld, exports, diagrams, generation
 from . import openspec_service as openspec_mod
 from . import conversations as conversations_mod
 from . import decisions as decisions_mod
@@ -47,6 +47,7 @@ class Services:
     commit_version: Callable[[str, str, str, str], Awaitable[dict[str, Any]]]
     ai_command: Callable[[str, str, str, list[str], str], Awaitable[dict[str, Any]]]
     codegraph: Any = None  # codegraph.service.CodeGraphService (repository analysis)
+    broadcast: Callable[[str, str, dict[str, Any]], Awaitable[None]] | None = None  # room messages (main.broadcast_room)
 
 
 INSTRUCTIONS = """ArchFlow holds a team's software architecture as structured data: components (nodes), connections \
@@ -72,13 +73,26 @@ class Principal:
         self.role = role
         self.user: str = account.get("name") or claims.get("user_name") or "agent"
         self.client: str = tok.client_id
-        self.scopes = set(tok.scopes) & set(authz.role_scopes(role))
+        self.token_scopes = set(tok.scopes)
+        self.org_role = role
+        self._needs_write = False
+        self.scopes = self.token_scopes & set(authz.role_scopes(role))
+
+    def for_project(self, store, project_id: str) -> None:
+        """Apply the user's role override on this project, if any (see project_roles.py). Writing still needs a
+        token that was granted edit access."""
+        role = authz.effective_role(self.org_role, store.get_project_role(project_id, self.user_id))
+        self.role = role
+        self.scopes = self.token_scopes & set(authz.role_scopes(role))
+        if self._needs_write:
+            self.require_write()
 
     @property
     def actor(self) -> str:
         return f"{self.user} via MCP"
 
     def require_write(self):
+        self._needs_write = True  # re-checked when a project's role override applies
         if auth.SCOPE_WRITE not in self.scopes:
             raise ToolError("This connection is read-only. Reconnect with edit access to change the architecture.")
 
@@ -114,6 +128,7 @@ def build_remote_mcp(services: Services) -> MCPServer:
         project = store.get_project(project_id)
         if not project or project.get("org_id") != p.org_id:
             raise ToolError(f"Project '{project_id}' not found in your organization")
+        p.for_project(store, project_id)
         state = store.get_state(project_id, branch)
         if state is None:
             raise ToolError(f"Branch '{branch}' not found")
@@ -285,6 +300,25 @@ def build_remote_mcp(services: Services) -> MCPServer:
             raise ToolError("format must be markdown or json")
         b = exports.collect(store, project_id, branch, state)
         return exports.spec_markdown(b) if format == "markdown" else exports.to_json(b)
+
+    @mcp.tool()
+    async def generate_artifacts(project_id: str, kind: str, target: str, branch: str = "main", use_ai: bool = False,
+                                 cloud: str = "") -> dict[str, Any]:
+        """Generate files from the design and requirements. kind/target: iac (terraform, compose, k8s), tests
+        (gherkin, pytest, playwright; each with a contract checklist per connection) or docs (srs, brd, runbook).
+        cloud (terraform only): aws, azure or gcp; empty = the cloud the design targets. use_ai=true lets the AI
+        refine the built-in version (needs edit access). Returns {files: [{path, content}], engine, notes, checks}."""
+        p = Principal(store)
+        if use_ai:
+            p.require_write()
+        _, state = project_for(p, project_id, branch)
+        d = generation.collect(store, project_id, branch, state)
+        try:
+            res = await asyncio.to_thread(generation.generate, d, kind, target, use_ai=use_ai, org_id=p.org_id,
+                                          cloud=cloud)
+        except ValueError as exc:
+            raise ToolError(str(exc)) from exc
+        return res.dump()
 
     @mcp.tool()
     def generate_coding_prompt(project_id: str, component_ids: list[str] | None = None, target: str = "claude-code",
@@ -630,5 +664,131 @@ def build_remote_mcp(services: Services) -> MCPServer:
         if not files:
             raise ToolError("give at least one file")
         return codegraph_call(services.codegraph.impact, project_id, files[:2000], branch, max(1, min(depth, 6)))
+
+    # ---- Jira (two-way sync; same rules as the REST routes: developer+ with a write connection) ----
+    def jira_conn(p: Principal, project_id: str, branch: str = "main") -> dict[str, Any]:
+        p.require_write()
+        project_for(p, project_id, branch)
+        conn = store.get_jira_connection(p.org_id)
+        if not conn:
+            raise ToolError("Jira is not connected for this organization: an admin connects it in ArchFlow's "
+                            "organization settings.")
+        return conn
+
+    def jira_key(conn: dict[str, Any], project_key: str) -> str:
+        from . import jira as jira_mod
+
+        try:
+            return jira_mod.check_project_key(project_key or conn["project_key"])
+        except ValueError as exc:
+            raise ToolError(f"Set a Jira project key: {exc}") from exc
+
+    async def jira_tell(project_id: str, branch: str, actor: str) -> None:
+        if services.broadcast:
+            await services.broadcast(project_id, branch, {"type": "jira", "actor": actor})
+
+    @mcp.tool()
+    async def jira_push_preview(project_id: str, branch: str = "main", project_key: str = "",
+                                ai: bool = True) -> dict[str, Any]:
+        """Dry run of pushing a branch to Jira: the epics, stories, sub-tasks and links that would be created,
+        updated or left unchanged. Sends nothing to Jira."""
+        from . import jira as jira_mod
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        key = jira_key(conn, project_key)
+        _, state = project_for(p, project_id, branch)
+        plan = await asyncio.to_thread(jira_mod.make_plan, store, project_id, state, org_id=p.org_id, ai=ai)
+        return {"project_key": key, "engine": plan["engine"], "counts": plan["counts"], "by_type": plan["by_type"],
+                "items": [{k: i.get(k) for k in ("ref", "type", "summary", "action", "external_key", "parent",
+                                                 "story_points")} for i in plan["items"]]}
+
+    @mcp.tool()
+    async def jira_push(project_id: str, confirm: bool = False, branch: str = "main", project_key: str = "",
+                        ai: bool = True) -> dict[str, Any]:
+        """Push a branch to Jira (creates or updates issues; unchanged ones are skipped). Call jira_push_preview
+        first and pass confirm=true."""
+        from . import jira as jira_mod
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        key = jira_key(conn, project_key)
+        if not confirm:
+            raise ToolError("Preview with jira_push_preview first, then call jira_push with confirm=true.")
+
+        def get_state() -> ProjectState:
+            return project_for(p, project_id, branch)[1]
+
+        try:
+            out = await asyncio.to_thread(jira_mod.push_project, store, conn, project_id, branch, get_state,
+                                          project_key=key, ai=ai, org_id=p.org_id, actor=p.actor)
+        except jira_mod.CONNECTION_ERRORS as exc:
+            raise ToolError(f"Jira push failed: {exc}") from exc
+        await jira_tell(project_id, branch, p.actor)
+        if services.broadcast:
+            await services.broadcast(project_id, branch, {"type": "activity", "actor": p.actor})
+        return {"project_key": out["project_key"], "counts": out["counts"], "engine": out["engine"],
+                "failed": [{k: r[k] for k in ("ref", "summary", "error")} for r in out["results"]
+                           if r["status"] == "error"]}
+
+    @mcp.tool()
+    async def jira_sync_status(project_id: str, branch: str = "main") -> dict[str, Any]:
+        """Pull the current Jira status of every linked issue now (webhooks keep it live when set up)."""
+        from . import jira as jira_mod
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        try:
+            n = await asyncio.to_thread(jira_mod.sync_status, store, conn, project_id)
+        except jira_mod.CONNECTION_ERRORS as exc:
+            raise ToolError(f"Could not read Jira: {exc}") from exc
+        await jira_tell(project_id, branch, p.actor)
+        return {"updated": n, "links": [{k: x[k] for k in ("object_kind", "object_id", "external_key", "status",
+                                                            "status_category")}
+                                        for x in store.list_external_links(project_id)]}
+
+    @mcp.tool()
+    async def jira_list_unlinked_issues(project_id: str, page_token: str = "", limit: int = 25, query: str = "",
+                                        project_key: str = "") -> dict[str, Any]:
+        """Issues in the Jira project that this ArchFlow project does not link to yet, newest first, each with
+        the requirement it would become. Pass next_page_token back as page_token for more."""
+        from . import jira as jira_mod
+        from . import jira_sync
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id)
+        key = jira_key(conn, project_key)
+
+        def run() -> dict[str, Any]:
+            with jira_mod.make_client(conn) as client:
+                return jira_sync.list_unlinked(client, store, project_id, key, page_token=page_token or None,
+                                               limit=limit, query=query)
+
+        try:
+            return await asyncio.to_thread(run)
+        except jira_mod.CONNECTION_ERRORS as exc:
+            raise ToolError(f"Could not read Jira: {exc}") from exc
+
+    @mcp.tool()
+    async def jira_import_issues(project_id: str, keys: list[str], branch: str = "main",
+                                 ai: bool = True) -> dict[str, Any]:
+        """Import Jira issues (keys such as SHOP-12) as requirements on a branch. Each is linked to its issue, so
+        importing it again is skipped."""
+        from . import jira as jira_mod
+        from . import jira_sync
+
+        p = Principal(store)
+        conn = jira_conn(p, project_id, branch)
+        try:
+            out = await jira_sync.import_issues(store, conn, project_id, branch, keys, ai=ai, org_id=p.org_id,
+                                                actor=p.actor, commit_ops=services.commit_ops,
+                                                get_state=lambda: project_for(p, project_id, branch)[1])
+        except (OpError, ConflictError) as exc:
+            raise ToolError(str(exc)) from exc
+        except jira_mod.CONNECTION_ERRORS as exc:  # includes bad input (ValueError) and JiraBusy
+            raise ToolError(str(exc)) from exc
+        if out["imported"]:
+            await jira_tell(project_id, branch, p.actor)
+        return out
 
     return mcp

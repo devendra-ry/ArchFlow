@@ -33,6 +33,12 @@ EXPECT_KEYS = {  # what each suite's runner checks; a typo would otherwise silen
     "guide": TEXT | {"grounded_share"},
     "diagrams": TEXT | {"min_flows", "requirement_share"},
     "jira": TEXT | {"min_points", "max_points"},
+    "meetings": TEXT | {"min_requirements", "max_requirements", "min_decisions", "max_decisions", "action_owners",
+                        "has_open_questions", "speakers", "agreement"},
+    "knowledge": TEXT | {"answerable", "cites", "quotes_verbatim"},
+    "costs": TEXT | {"min_recommendations", "targets_any", "within_budget_first"},
+    "compliance": TEXT | {"min_steps", "min_requirements", "targets_any", "controls_any"},
+    "generation": TEXT | {"min_files", "covers_requirements", "paths_any"},
 }
 CASE_KEYS = {
     "compare": {"alternatives"},
@@ -47,6 +53,11 @@ CASE_KEYS = {
     "guide": {"name", "memory", "decisions"},
     "diagrams": set(),
     "jira": set(),
+    "meetings": {"transcript"},
+    "knowledge": {"documents", "question"},
+    "costs": {"assumptions"},
+    "compliance": {"frameworks", "memory"},
+    "generation": {"kind", "target", "cloud", "name"},
 }
 
 

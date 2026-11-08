@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import type { AppNotification } from "../types";
+import { onMenuKeyDown } from "./Select";
 
 const POLL_MS = 20_000;
 const VERB: Record<AppNotification["kind"], string> = {
@@ -46,7 +47,7 @@ export function NotificationBell({ refreshKey, onOpen }: { refreshKey: number; o
         {unread > 0 && <span className="notif-count">{unread > 99 ? "99+" : unread}</span>}
       </button>
       {open && (
-        <div className="notif-pop" role="menu">
+        <div className="notif-pop af-menu" role="menu" onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); else onMenuKeyDown(e); }}>
           <div className="row between">
             <b>Notifications</b>
             {unread > 0 && <button className="small ghost" onClick={markAll}>Mark all read</button>}

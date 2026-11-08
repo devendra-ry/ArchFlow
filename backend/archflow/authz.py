@@ -16,8 +16,16 @@ owner      owner      — org settings (rename); granting or removing the owner 
 Approving a saved version (or requesting changes to it) is for reviewers, architects, admins and owners
 (``can_approve``); developers request reviews but do not approve. See approvals.py for the self-approval rule.
 
+Project role overrides (project_roles.py): an org admin, or an admin of the project, can give a member a different
+role on one project (viewer / reviewer / developer, shown as "editor" / admin). On that project the override
+replaces the org role, higher or lower. Org owners are never overridden.
+
+Org sign-in rules (sso.py, mfa.py): an org can require two-step sign-in (members without MFA get 403 until they turn
+it on) and, with single sign-on set up, require SSO (sessions that did not sign in through the org's identity
+provider get 403; owners are exempt so that a broken SSO setup cannot lock everyone out).
+
 Errors: 401 when not signed in, 404 when the project/org is not in one of your orgs (no existence leak),
-403 when you are a member but your role is insufficient.
+403 when you are a member but your role is insufficient or the org's sign-in rules block this session.
 """
 
 from __future__ import annotations
@@ -35,6 +43,14 @@ ROLES = ("viewer", "reviewer", "developer", "architect", "admin", "owner")
 RANK = {r: i for i, r in enumerate(ROLES)}
 ACTIONS = {"read": "viewer", "review": "reviewer", "edit": "developer", "admin": "admin", "owner": "owner"}
 APPROVER_ROLES = ("reviewer", "architect", "admin", "owner")
+PROJECT_ROLES = ("viewer", "reviewer", "developer", "admin")  # what a project override may set
+
+
+def effective_role(org_role: str | None, override: str | None) -> str | None:
+    """A member's role on one project: the override if any (never for owners), else the org role."""
+    if org_role is None or org_role == "owner":
+        return org_role
+    return override if override in PROJECT_ROLES else org_role
 
 
 def can(role: str | None, action: str) -> bool:
@@ -67,6 +83,7 @@ class Access:
     role: str | None = None
     org_id: str | None = None
     project: dict[str, Any] | None = None
+    org_role: str | None = None  # the org role, when ``role`` comes from a project override
 
     @property
     def actor(self) -> str:
@@ -100,22 +117,39 @@ class Authz:
             raise HTTPException(401, "Not signed in")
         return user
 
-    def check_org(self, user: dict[str, Any], org_id: str, action: str) -> Access:
+    def policy_block(self, user: dict[str, Any], org_id: str, role: str | None) -> str | None:
+        """Why the org's sign-in rules block this session (a message), or None."""
+        rules = self.store.get_auth_settings(org_id)
+        if not rules:
+            return None
+        if (rules["sso_enabled"] and rules["require_sso"] and role != "owner"
+                and user.get("auth_method") != f"sso:{org_id}"):
+            return "This organization requires single sign-on. Sign out, then use Sign in with SSO."
+        if rules["require_mfa"] and not self.store.mfa_enabled(user["id"]):
+            return "This organization requires two-step sign-in. Turn it on from your account menu."
+        return None
+
+    def check_org(self, user: dict[str, Any], org_id: str, action: str, policy: bool = True) -> Access:
         role = self.store.get_role(org_id, user["id"])
         if role is None or not self.store.get_org(org_id):
             raise HTTPException(404, "org not found")
+        if policy and (blocked := self.policy_block(user, org_id, role)):
+            raise HTTPException(403, blocked)
         if not can(role, action):
             raise HTTPException(403, f"Your role ({role}) cannot do this; it needs {ACTIONS[action]} or above.")
-        return Access(user=user, role=role, org_id=org_id)
+        return Access(user=user, role=role, org_id=org_id, org_role=role)
 
     def check_project(self, user: dict[str, Any], pid: str, action: str) -> Access:
         project = self.store.get_project(pid)
-        role = self.store.get_role(project["org_id"], user["id"]) if project else None
-        if not project or role is None:
+        org_role = self.store.get_role(project["org_id"], user["id"]) if project else None
+        if not project or org_role is None:
             raise HTTPException(404, "project not found")
+        if blocked := self.policy_block(user, project["org_id"], org_role):
+            raise HTTPException(403, blocked)
+        role = effective_role(org_role, self.store.get_project_role(pid, user["id"]))
         if not can(role, action):
             raise HTTPException(403, f"Your role ({role}) cannot do this; it needs {ACTIONS[action]} or above.")
-        return Access(user=user, role=role, org_id=project["org_id"], project=project)
+        return Access(user=user, role=role, org_id=project["org_id"], project=project, org_role=org_role)
 
     def project(self, action: str) -> Callable[..., Awaitable[Access]]:
         """Dependency for routes with a ``{pid}`` path parameter. Async so that it can attribute the request's AI

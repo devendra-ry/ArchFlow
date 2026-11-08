@@ -281,11 +281,13 @@ def dedupe_questions(questions: list[str]) -> list[str]:
 
 
 
-def claude_ask(context: str, question: str, org_id: str | None = None) -> str:
-    """Answer a question about the project (name kept for compatibility; uses the "reasoning" group)."""
+def claude_ask(context: str, question: str, org_id: str | None = None, knowledge: str = "") -> str:
+    """Answer a question about the project (name kept for compatibility; uses the "reasoning" group). ``knowledge``
+    is the matching knowledge-base passages (knowledge.context_block)."""
     try:
         return agents.run_text(ASK_PROMPT, variables={"project_context": "", "memory": "", "summary": "",
-                                                      "context": context, "question": question},
+                                                      "knowledge": knowledge, "context": context,
+                                                      "question": question},
                                org_id=org_id, max_tokens=MAX_TOKENS,
                                docs=cloud_docs.DocsRequest(query=question, about=context))
     except llm.LLMRefused:

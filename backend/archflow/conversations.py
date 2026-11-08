@@ -213,9 +213,10 @@ def summary_block(summary: str) -> str:
     return f"<conversation_summary>\n{summary}\n</conversation_summary>" if summary.strip() else ""
 
 
-def ask_variables(project_context: str, memory: str, summary: str) -> dict[str, str]:
-    """Variables of the assistant.ask prompt's system blocks (project data, memory, conversation summary)."""
-    return {"project_context": project_context, "memory": memory, "summary": summary.strip()}
+def ask_variables(project_context: str, memory: str, summary: str, knowledge: str = "") -> dict[str, str]:
+    """Variables of the assistant.ask prompt's system blocks (project data, memory, conversation summary and the
+    knowledge-base passages that match the question)."""
+    return {"project_context": project_context, "memory": memory, "summary": summary.strip(), "knowledge": knowledge}
 
 
 def command_context(store: Any, pid: str, conv: dict[str, Any] | None) -> str:
@@ -427,7 +428,10 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
     def stream_answer(pid: str, branch: str, conv: dict[str, Any], question: str, user_msg: dict[str, Any],
                       a: Any, background: BackgroundTasks) -> StreamingResponse:
         summary, history = window(store, conv, before_seq=user_msg["seq"])
-        variables = ask_variables(project_context(pid, branch), memory_block(store, pid), summary)
+        from . import knowledge
+
+        variables = ask_variables(project_context(pid, branch), memory_block(store, pid), summary,
+                                  knowledge.context_block(store, pid, question, a.org_id))
         messages = chat_messages(history) + [{"role": "user", "content": question}]
         if len(messages) > 1 and messages[-2]["role"] == "user":  # an earlier question that got no answer
             messages[-2:] = [{"role": "user", "content": messages[-2]["content"] + "\n\n" + question}]

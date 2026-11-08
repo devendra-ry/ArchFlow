@@ -60,6 +60,8 @@ class UserSession(Base):
     expires_at: Mapped[float] = mapped_column(Double, nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     user_agent: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # How this session signed in: "password", or "sso:<org_id>" (an org that requires SSO checks it, see authz.py)
+    auth_method: Mapped[str] = mapped_column(Text, nullable=False, default="password", server_default="password")
 
 
 class Membership(Base):
@@ -123,6 +125,9 @@ class OrgJiraConnection(Base):
     ciphertext: Mapped[str] = mapped_column(Text, nullable=False)  # AES-256-GCM API token
     last4: Mapped[str] = mapped_column(Text, nullable=False)
     project_key: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # The webhook secret Jira sends back (encrypted like the token; "" = no webhook). See jira_sync.py.
+    webhook_ciphertext: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    webhook_created_at: Mapped[str | None] = mapped_column(UTCDateTime)
     updated_by: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
 
@@ -491,4 +496,112 @@ class AITrace(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     model_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     tool_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    created_at: Mapped[str] = created()
+
+
+# --------------------------------------------------------------------------- knowledge base (RAG)
+class KbDocument(Base):
+    """A document in a project's knowledge base: an upload, an imported spec or a meeting transcript."""
+    __tablename__ = "kb_documents"
+    __table_args__ = (Index("idx_kb_documents_project", "project_id", "created_at"),)
+    id: Mapped[str] = mapped_column(Text, primary_key=True)  # kb-<hex>
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), nullable=False)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    type: Mapped[str] = mapped_column(Text, nullable=False)  # pdf | docx | md | txt | vtt | srt | audio
+    origin: Mapped[str] = mapped_column(Text, nullable=False, default="upload", server_default="upload")  # upload | import | meeting
+    chars: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    chunks: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    embedding_model: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")  # "" = keywords only
+    created_by: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    created_at: Mapped[str] = created()
+
+
+class KbChunk(Base):
+    """One retrievable passage of a knowledge-base document, with its embedding when a model made one."""
+    __tablename__ = "kb_chunks"
+    __table_args__ = (Index("idx_kb_chunks_project", "project_id"), Index("idx_kb_chunks_document", "document_id", "ord"))
+    id: Mapped[int] = mapped_column(BigId, primary_key=True, autoincrement=True)
+    document_id: Mapped[str] = mapped_column(Text, _fk("kb_documents.id"), nullable=False)
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), nullable=False)
+    ord: Mapped[int] = mapped_column(Integer, nullable=False)
+    section: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    page: Mapped[int | None] = mapped_column(Integer)
+    locator: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")  # e.g. a meeting timestamp
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    embedding: Mapped[list[float] | None] = mapped_column(JSONType, nullable=True)
+
+
+# --------------------------------------------------------------------------- integrations (GitHub, Confluence, Slack, Teams)
+class OrgIntegration(Base):
+    """An org's connection to one outside service. The secret (token or webhook URL) is encrypted like the AI keys."""
+    __tablename__ = "org_integrations"
+    org_id: Mapped[str] = mapped_column(Text, _fk("orgs.id"), primary_key=True)
+    kind: Mapped[str] = mapped_column(Text, primary_key=True)  # github | confluence | slack | teams
+    config: Mapped[dict[str, Any]] = mapped_column(JSONType, nullable=False, default=dict, server_default="{}")
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    last4: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+# --------------------------------------------------------------------------- compliance frameworks
+class ComplianceSettings(Base):
+    """Which compliance frameworks (soc2, hipaa, gdpr, pci, iso27001) apply to a project."""
+    __tablename__ = "compliance_settings"
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), primary_key=True)
+    frameworks: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list, server_default="[]")
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+class ComplianceEvidence(Base):
+    """A person's evidence or note on one control: "met" (by process), "not_applicable", or a note only ("")."""
+    __tablename__ = "compliance_evidence"
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), primary_key=True)
+    framework: Mapped[str] = mapped_column(Text, primary_key=True)
+    control_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    status: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    note: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+# --------------------------------------------------------------------------- SSO, MFA and project roles (sso.py, mfa.py)
+class OrgAuthSettings(Base):
+    """An org's sign-in rules: OIDC single sign-on (client secret encrypted like the AI keys) and require-MFA."""
+    __tablename__ = "org_auth_settings"
+    org_id: Mapped[str] = mapped_column(Text, _fk("orgs.id"), primary_key=True)
+    sso_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    issuer: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    client_id: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")  # client secret
+    last4: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    domains: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list, server_default="[]")
+    default_role: Mapped[str] = mapped_column(Text, nullable=False, default="developer", server_default="developer")
+    require_sso: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    require_mfa: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    updated_by: Mapped[str | None] = mapped_column(Text)
+    updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
+
+
+class UserMfa(Base):
+    """A user's TOTP factor (secret encrypted with secrets_box) and hashed one-time recovery codes."""
+    __tablename__ = "user_mfa"
+    user_id: Mapped[str] = mapped_column(Text, _fk("users.id"), primary_key=True)
+    ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    recovery_hashes: Mapped[list[str]] = mapped_column(JSONType, nullable=False, default=list, server_default="[]")
+    last_step: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")  # replay guard
+    created_at: Mapped[str] = created()
+    enabled_at: Mapped[str | None] = mapped_column(UTCDateTime)
+
+
+class ProjectRole(Base):
+    """A member's role on one project, replacing their org role there (viewer / reviewer / developer / admin)."""
+    __tablename__ = "project_roles"
+    __table_args__ = (Index("idx_project_roles_user", "user_id"),)
+    project_id: Mapped[str] = mapped_column(Text, _fk("projects.id"), primary_key=True)
+    user_id: Mapped[str] = mapped_column(Text, _fk("users.id"), primary_key=True)
+    role: Mapped[str] = mapped_column(Text, nullable=False)
+    granted_by: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[str] = created()

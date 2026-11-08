@@ -5,7 +5,11 @@ A case is a dict from a dataset YAML. Shared keys:
     project: {template: <name>, ops: [...]}   the project state (ops as in ops.apply_ops)
     expect: {...}                              suite-specific checks, below
     ragas: [faithfulness | answer_accuracy | technically_sound | grounded_in_project, ...]   optional
-The intake suite also takes ``document: {filename, text}``: the uploaded file's name and (text) content.
+The intake suite also takes ``document: {filename, text}``: the uploaded file's name and (text) content; the meetings
+suite takes ``transcript: {filename, text}``, the knowledge suite ``documents: [{filename, text}]`` and a ``question``,
+and the costs suite ``assumptions`` (workload overrides); the compliance suite takes ``frameworks`` (ids) and
+``memory`` (project memory texts); the generation suite takes ``kind``, ``target``, an optional
+``cloud`` (terraform) and ``name`` (the project name).
 
 The ``adversarial`` suite runs another suite's agent (``target: ask | command | design | review | ...``) on
 red-team input (prompt injection in requirements or pasted documents, requests for the system prompt, attempts
@@ -22,9 +26,10 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
-from .. import ai, chat, evaluation, intake, lld, merge, review, suggestions, exports, diagrams, jira
+from .. import (ai, chat, compliance, costs, evaluation, intake, knowledge, lld, meetings, merge, review, suggestions, exports,
+               diagrams, generation, jira)
 from ..analysis import full_analysis
-from ..models import LLD_TYPES, ProjectState
+from ..models import LLD_TYPES, ProjectState, without_deleted
 from ..ops import apply_ops, resolve_node
 from ..templates import build_template
 
@@ -411,6 +416,146 @@ def run_jira(case: dict[str, Any], org_id: str | None) -> Outcome:
                    contexts=[json.dumps(inputs)], raw=stories)
 
 
+def run_meetings(case: dict[str, Any], org_id: str | None) -> Outcome:
+    state = build(case.get("project"))
+    tr = case["transcript"]
+    t = meetings.read_transcript(tr.get("filename", "meeting.vtt"), tr["text"].encode("utf-8"))
+    out = meetings.propose(t, state, org_id, use_ai=True)
+    exp = case.get("expect") or {}
+    reqs, decisions, actions = out["requirements"], out["decisions"], out["action_items"]
+    checks: list[Check] = [("engine is llm", out["engine"] == "llm", out["engine"] + "; " + "; ".join(out["notes"]))]
+    for key, items, label in (("requirements", reqs, "requirements"), ("decisions", decisions, "decisions")):
+        if f"min_{key}" in exp:
+            checks.append((f"at least {exp[f'min_{key}']} {label}", len(items) >= exp[f"min_{key}"], str(len(items))))
+        if f"max_{key}" in exp:
+            checks.append((f"at most {exp[f'max_{key}']} {label}", len(items) <= exp[f"max_{key}"], str(len(items))))
+    for owner in exp.get("action_owners") or []:
+        checks.append((f"an action item for {owner}", any(owner.lower() in a["owner"].lower() for a in actions),
+                       ", ".join(a["owner"] for a in actions)))
+    if exp.get("has_open_questions"):
+        checks.append(("has open questions", bool(out["open_questions"]), str(len(out["open_questions"]))))
+    if exp.get("speakers"):
+        checks.append(("every requirement names its speaker", all(r["speaker"] for r in reqs), ""))
+    for term, want in exp.get("agreement") or []:  # [term in the requirement, agreed | proposed | disputed]
+        r = next((r for r in reqs if term.lower() in (r["title"] + " " + r["description"]).lower()), None)
+        checks.append((f"'{term}' is {want}", bool(r) and r["agreement"] == want, r["agreement"] if r else "missing"))
+    text = meetings.to_text(out)
+    checks += _text_checks(text, exp)
+    return Outcome(response=text, checks=checks, question=f"Extract requirements and decisions from {t.name}",
+                   contexts=[tr["text"]], raw=out)
+
+
+def run_knowledge(case: dict[str, Any], org_id: str | None) -> Outcome:
+    chunks: list[dict[str, Any]] = []
+    for d in case["documents"]:
+        doc = intake.read_document(d.get("filename", "doc.md"), d["text"].encode("utf-8"))
+        for c in knowledge.chunk_sections(doc.sections):
+            chunks.append({**c, "document": doc.name, "document_id": doc.name, "type": doc.type, "embedding": None})
+    results, mode = knowledge.rank(case["question"], chunks, None, knowledge.TOP_K)
+    for i, r in enumerate(results):
+        r["ref"] = f"K{i + 1}"
+    out = knowledge.answer_from(case["question"], results, mode, org_id, use_ai=True)
+    exp = case.get("expect") or {}
+    checks: list[Check] = [("engine is llm", out["engine"] == "llm", out["engine"])]
+    if "answerable" in exp:
+        checks.append((f"answerable is {exp['answerable']}", out["answerable"] == exp["answerable"],
+                       str(out["answerable"])))
+    cited = {c["document"] for c in out["citations"]}
+    for name in exp.get("cites") or []:
+        checks.append((f"cites {name}", name in cited, ", ".join(sorted(cited))))
+    if exp.get("quotes_verbatim"):
+        texts = {r["ref"]: " ".join(r["text"].split()).lower() for r in results}
+        ok = all(" ".join(c["quote"].split()).lower() in texts.get(c["ref"], "") for c in out["citations"] if c["quote"])
+        checks.append(("every quote is verbatim from its passage", ok, ""))
+    checks += _text_checks(out["answer"], exp)
+    return Outcome(response=out["answer"], checks=checks, question=case["question"],
+                   contexts=[r["text"] for r in results], raw=out)
+
+
+def run_costs(case: dict[str, Any], org_id: str | None) -> Outcome:
+    state = build(case.get("project"))
+    est = costs.estimate(state, [], costs._overrides(case.get("assumptions") or {}))
+    recs, _questions, engine = costs.recommend(est, state, "Eval project", org_id, use_ai=True)
+    exp = case.get("expect") or {}
+    names = {ln["name"] for ln in est["lines"]}
+    checks: list[Check] = [("engine is llm", engine == "llm", engine),
+                           (f"at least {exp.get('min_recommendations', 1)} recommendation(s)",
+                            len(recs) >= exp.get("min_recommendations", 1), str(len(recs))),
+                           ("every recommendation names real components",
+                            all(r["components"] and set(r["components"]) <= names for r in recs), "")]
+    if exp.get("targets_any"):
+        hit = [c for c in exp["targets_any"] if any(c in r["components"] for r in recs)]
+        checks.append((f"targets one of {exp['targets_any']}", bool(hit), ", ".join(hit)))
+    if exp.get("within_budget_first") and (est.get("budget") or {}).get("status") == "over":
+        checks.append(("the first recommendation saves the most",
+                       bool(recs) and recs[0]["saving_monthly"] == max(r["saving_monthly"] for r in recs), ""))
+    text = "\n".join(f"- {r['title']} (${r['saving_monthly']:,.0f}/month; {', '.join(r['components'])}): "
+                     f"{r['detail']} Trade-off: {r['tradeoff']}" for r in recs)
+    checks += _text_checks(text, exp)
+    return Outcome(response=text, checks=checks, question="Recommend cost savings for this architecture",
+                   contexts=[json.dumps([{k: ln[k] for k in ("name", "monthly", "basis")} for ln in est["lines"]])],
+                   raw=recs)
+
+
+def run_compliance(case: dict[str, Any], org_id: str | None) -> Outcome:
+    state = build(case.get("project"))
+    memory = [{"id": f"mem-{i}", "text": t} for i, t in enumerate(case.get("memory") or [])]
+    rep = compliance.report(state, frameworks=case.get("frameworks") or ["soc2"], memory=memory)
+    out = compliance.remediate(rep, state, "Eval project", org_id, memory=memory, use_ai=True)
+    exp = case.get("expect") or {}
+    open_refs = {f"{fw['name']} {c['id']}" for fw in rep["frameworks"] for c in fw["controls"]
+                 if c["effective"] in ("fail", "needs_evidence")}
+    names = {nid: n.name for nid, n in state.nodes.items()}
+    targeted = {names[c] for s in out["steps"] for c in s["components"] if c in names}
+    checks: list[Check] = [("engine is llm", out["engine"] == "llm", out["engine"]),
+                           (f"at least {exp.get('min_steps', 1)} step(s)", len(out["steps"]) >= exp.get("min_steps", 1),
+                            str(len(out["steps"]))),
+                           ("every step closes an open control",
+                            all(s["controls"] and set(s["controls"]) <= open_refs for s in out["steps"]), "")]
+    if "min_requirements" in exp:
+        checks.append((f"at least {exp['min_requirements']} proposed requirement(s)",
+                       len(out["requirements"]) >= exp["min_requirements"], str(len(out["requirements"]))))
+    if exp.get("targets_any"):
+        hit = [c for c in exp["targets_any"] if c in targeted]
+        checks.append((f"targets one of {exp['targets_any']}", bool(hit), ", ".join(hit)))
+    if exp.get("controls_any"):
+        covered = {c for s in out["steps"] for c in s["controls"]}
+        hit = [c for c in exp["controls_any"] if c in covered]
+        checks.append((f"addresses one of {exp['controls_any']}", bool(hit), ", ".join(hit)))
+    text = "\n".join([out["summary"]]
+                     + [f"- {s['title']} ({', '.join(s['controls'])}; {', '.join(names.get(c, c) for c in s['components'])}): "
+                        f"{s['detail']}" for s in out["steps"]]
+                     + [f"- NFR: {r['title']}: {r['description']} {' '.join(r['acceptance_criteria'])}"
+                        for r in out["requirements"]])
+    checks += _text_checks(text, exp)
+    findings = [{"control": f"{fw['name']} {c['id']}", "status": c["effective"], "found": c["summary"]}
+                for fw in rep["frameworks"] for c in fw["controls"] if c["effective"] in ("fail", "needs_evidence")]
+    return Outcome(response=text, checks=checks, question="How should this architecture close its compliance gaps?",
+                   contexts=[json.dumps(findings)], raw=out)
+
+
+def run_generation(case: dict[str, Any], org_id: str | None) -> Outcome:
+    state = build(case.get("project"))
+    d = generation.Design(name=case.get("name") or "Eval project", branch="main", state=without_deleted(state))
+    res = generation.generate(d, case["kind"], case["target"], use_ai=True, org_id=org_id, cloud=case.get("cloud", ""))
+    exp = case.get("expect") or {}
+    text = "\n\n".join(f"--- {f.path}\n{f.content}" for f in res.files)
+    bad = [c for c in res.checks if not c["ok"]]
+    checks: list[Check] = [("engine is ai", res.engine == "ai", res.engine + "; " + "; ".join(res.notes)),
+                           ("files are well-formed", not bad, "; ".join(f"{c['path']}: {c['detail']}" for c in bad[:3]))]
+    if exp.get("min_files"):
+        checks.append((f"at least {exp['min_files']} file(s)", len(res.files) >= exp["min_files"], str(len(res.files))))
+    for rid in exp.get("covers_requirements") or []:
+        checks.append((f"covers {rid}", rid in text, ""))
+    if exp.get("paths_any"):
+        paths = [f.path for f in res.files]
+        hit = [p for p in exp["paths_any"] if any(p in x for x in paths)]
+        checks.append((f"has a file like {exp['paths_any']}", bool(hit), ", ".join(paths[:8])))
+    checks += _text_checks(text, exp)
+    return Outcome(response=text[:20000], checks=checks, question=f"Generate {case['kind']} ({case['target']})",
+                   contexts=[generation.design_summary(d)], raw=res.dump())
+
+
 SUITES: dict[str, tuple[Callable[[dict[str, Any], str | None], Outcome], list[str]]] = {
     # suite: (runner, prompt ids it exercises)
     "compare": (run_compare, ["compare.evaluate"]),
@@ -426,4 +571,9 @@ SUITES: dict[str, tuple[Callable[[dict[str, Any], str | None], Outcome], list[st
     "guide": (run_guide, ["exports.agent_guide"]),
     "diagrams": (run_diagrams, ["diagrams.sequence"]),
     "jira": (run_jira, ["jira.stories"]),
+    "meetings": (run_meetings, ["meetings.extract"]),
+    "knowledge": (run_knowledge, ["kb.answer"]),
+    "costs": (run_costs, ["costs.optimize"]),
+    "compliance": (run_compliance, ["compliance.review"]),
+    "generation": (run_generation, ["generate.iac", "generate.tests", "generate.docs"]),
 }

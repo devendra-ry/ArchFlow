@@ -3,6 +3,7 @@ import { ApiError, api } from "../api";
 import { useEscape } from "../useEscape";
 import { ROLES, ROLE_HELP, can, type AIConfig, type ApprovalPolicy, type AIGroup, type AISettings, type AITestResult, type AIUsageReport, type AIUsageRow, type Invite, type Member, type Role, type JiraSettings, type JiraTestResult } from "../types";
 import { Copy } from "./ConnectDialog";
+import { Select } from "./Select";
 
 interface Base { orgId: string; orgName: string; role: Role; selfId: string; onClose: () => void; onChanged?: () => void }
 
@@ -66,10 +67,9 @@ export function MembersDialog({ orgId, orgName, role, selfId, onClose, onChanged
                 <td className="small">{m.email}</td>
                 <td>
                   {editable ? (
-                    <select value={m.role} aria-label={`Role of ${m.name}`} title={ROLE_HELP[m.role]}
-                      onChange={(e) => run(() => api.updateMember(orgId, m.user_id, e.target.value as Role))}>
-                      {grantable(role).map((r) => <option key={r} value={r}>{r}</option>)}
-                    </select>
+                    <Select size="sm" value={m.role} aria-label={`Role of ${m.name}`} title={ROLE_HELP[m.role]}
+                      onChange={(v) => run(() => api.updateMember(orgId, m.user_id, v))}
+                      options={grantable(role).map((r) => ({ value: r, label: r, hint: ROLE_HELP[r] }))} menuWidth={280} />
                   ) : <span title={ROLE_HELP[m.role]}>{m.role}</span>}
                 </td>
                 <td>
@@ -95,9 +95,8 @@ export function MembersDialog({ orgId, orgName, role, selfId, onClose, onChanged
           <form className="row gap" onSubmit={createInvite}>
             <input className="grow" type="email" placeholder="Email (optional: restricts who can use it)" value={inviteEmail}
               onChange={(e) => setInviteEmail(e.target.value)} aria-label="Invitee email" />
-            <select value={inviteRole} onChange={(e) => setInviteRole(e.target.value as Role)} aria-label="Role" title={ROLE_HELP[inviteRole]}>
-              {grantable(role).map((r) => <option key={r} value={r}>{r}</option>)}
-            </select>
+            <Select value={inviteRole} onChange={setInviteRole} aria-label="Role" title={ROLE_HELP[inviteRole]}
+              options={grantable(role).map((r) => ({ value: r, label: r, hint: ROLE_HELP[r] }))} menuWidth={280} />
             <button className="primary">Create invite link</button>
           </form>
           {link && (
@@ -268,10 +267,9 @@ export function AISettingsDialog({ orgId, orgName, onClose }: Base) {
                     return (
                       <div key={i} className="ai-model-row">
                         <span className="ai-order">{i + 1}</span>
-                        <select value={entry.provider} aria-label="Provider"
-                          onChange={(e) => setChain(group, config[group].map((x, k) => (k === i ? { provider: e.target.value, model: "" } : x)))}>
-                          {catalog.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-                        </select>
+                        <Select value={entry.provider} aria-label="Provider" className="ai-provider"
+                          onChange={(v) => setChain(group, config[group].map((x, k) => (k === i ? { provider: v, model: "" } : x)))}
+                          options={catalog.map((c) => ({ value: c.id, label: c.label }))} />
                         <input className="grow mono" value={entry.model} aria-label="Model id" placeholder={p?.examples[group] ?? "model id"}
                           onChange={(e) => setChain(group, config[group].map((x, k) => (k === i ? { ...x, model: e.target.value } : x)))} />
                         <button type="button" className="ghost tiny-btn" disabled={i === 0} aria-label="Move up"

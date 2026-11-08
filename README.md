@@ -29,6 +29,18 @@ ArchFlow treats requirements, architecture, decisions and versions as **one stru
 
 ---
 
+## 🎬 Watch the Walkthrough
+
+<div align="center">
+
+[![ArchFlow: Open-Source AI System Design, from Requirements to Code](https://img.youtube.com/vi/hqfFbIlfeHc/maxresdefault.jpg)](https://youtu.be/hqfFbIlfeHc)
+
+**[▶ Watch on YouTube](https://youtu.be/hqfFbIlfeHc)** · a complex global payments platform designed end to end: requirements, HLD, ADRs, LLD of every component, production checks, generated code and team workflows
+
+</div>
+
+---
+
 ## Screenshots
 
 ### Landing Page
@@ -148,6 +160,43 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 - **Soft delete** — deleting a requirement moves it to the **Deleted** filter with its component links kept, so **Restore** brings it back intact; deleted requirements are left out of health, traceability, AI context, coding briefs, OpenSpec changes and MCP tools. Admins can **Delete permanently** (the history is kept)
 - **Stale links** — when a requirement changes after a component linked to it last changed, the component gets a ⟳ badge on the canvas and the Inspector lists what changed; **Mark reviewed** confirms the component still fits. Staleness is computed from revision numbers (`stale_links` in the analysis), nothing extra is stored
 - **Import from a document** — upload a PRD, RFP or spec (PDF, Word `.docx`, Markdown, text; up to `ARCHFLOW_INTAKE_MAX_MB`, default 20 MB). The `intake.extract` agent reads long documents in parallel chunks and proposes FRs and NFRs with the section and page they came from, plus assumptions, constraints, open questions and stakeholders; likely duplicates and conflicts with existing requirements (or elsewhere in the document) are flagged with both sources. Review, edit and tick what to keep — nothing is added until you accept. Accepted requirements keep their provenance (file, section, page, import time) and assumptions/constraints/questions can be saved to project memory. Without an AI model, "shall / must / should" sentences and bullets under requirement headings are read instead. Document text is treated as untrusted input, never as instructions
+- **Jira, both ways** (Jira ⇅) — push requirements to Jira, or pick issues from the Jira project that are not linked yet and import them as requirements (with their acceptance criteria and priority, linked to the issue). Each requirement and component shows its Jira key with a To Do / In Progress / Done colour, kept current by a Jira webhook (an admin sets it up in **Live updates**) or **Sync now**
+- **Import from a meeting** (🎙 Meeting) — upload a Teams / Zoom / Google Meet transcript (`.vtt` with voice tags, `.srt`, text or Markdown with "Speaker: text" or "[00:12:05] Speaker: text", Word `.docx`) or a recording (`.mp3`, `.m4a`, `.wav`, `.webm`, `.mp4`; transcribed by the org's speech-to-text model, OpenAI Whisper by default). The `meetings.extract` agent reads the conversation in parallel windows and proposes the requirements people asked for (who said it, when, and whether the room **agreed**, only **proposed** it or **disputed** it), the **decisions** taken (rationale and the alternatives discussed), **action items** (owner, due date), open questions, assumptions, constraints, participants and a summary. Duplicates and conflicts with existing requirements are flagged. Accepting adds the requirements with provenance (`source.type = meeting`, speaker, timestamp), the decisions as **proposed ADRs**, and action items and questions as project memory; the transcript can also go into the knowledge base. Without a model, rules read requirement sentences, "we decided / let's go with", "I'll / can you … by Friday" and real questions (small talk is skipped)
+
+### 📚 Knowledge Base (RAG)
+
+- **Tools → Knowledge base** — upload the documents the team decides from (PRDs, RFPs, policies, runbooks, contracts, meeting transcripts). They are split into passages at section and paragraph boundaries (with a little overlap) and kept with their section, page and, for transcripts, the timestamp
+- **Hybrid retrieval** — BM25 keyword ranking always (offline too: error codes and product names match exactly) plus vector similarity when the org has an embedding model (Gemini `gemini-embedding-001` or OpenAI `text-embedding-3-small`, or `ARCHFLOW_MODEL_EMBEDDING`), merged with reciprocal-rank fusion. Documents added before a model was available are re-indexed with one click
+- **Cited answers** — the `kb.answer` agent answers only from the retrieved passages, cites every claim ([K1], [K2]…) with a verbatim quote, document, section and page, says when the documents do not answer, flags passages that disagree, and suggests follow-up questions drawn from the passages
+- **The assistant uses it** — every Ask question also gets the best matching passages (`assistant.ask` v4), so answers about the project can quote its documents
+- Passages are untrusted input (wrapped and never followed as instructions); personal data and secrets are masked before passages are embedded or sent to a model. Viewers search and ask; developers and up add and remove documents. REST: `GET|POST /api/projects/{id}/knowledge`, `POST …/knowledge/search | ask | reindex`, `DELETE …/knowledge/{doc}`
+
+### 💲 Cost Estimation
+
+- **Tools → Cost estimate** — a monthly cost range for the architecture on the canvas, one line per component: priced from its catalog kind (containers, Kubernetes, functions, VMs, relational / document / vector / search databases, warehouses, caches, queues, streams, object and file storage, CDN, load balancers, API gateways, identity, secrets, WAF, LLMs, ML endpoints, monitoring, workflows, email, SMS) and its vendor (AWS, Azure, Google Cloud, self-managed open source, SaaS), with the formula behind every number and a low–high range (usage-priced lines are less certain than fixed instances)
+- **Assumptions from the project** — monthly active users, peak requests per second, stored data, data transfer, availability, LLM calls and tokens, emails and messages per user are read from the requirements and memory ("5,000 concurrent users", "300 requests per second", "2 TB of documents", "99.95%"); every value says where it came from and can be changed in the dialog. 99.95% or more doubles stateful tiers (multi-AZ). Components can pin their own numbers with the properties `monthly_cost`, `instances`, `vcpu`, `storage_gb`
+- **LLM costs** use the model's token prices (LiteLLM's price map); a staging environment (30% of production by default), the region and data transfer out are included
+- **Budget check** — a cost requirement ("must cost less than $2,000 per month", "6k USD per year") is compared with the range: within budget, at risk or over
+- **Ways to save** — the `costs.optimize` agent writes recommendations grounded in the line items (components named, saving capped at what they cost, trade-offs against the NFRs); without a model, rules suggest the standard ones (commitments for steady instances, serverless for low traffic, a CDN for heavy egress, model routing for LLM-heavy designs). **CSV** download for spreadsheets
+- Prices are indicative on-demand list prices built into `costs.PRICES` (`ARCHFLOW_COST_PRICES` overrides any of them) — for comparing options and finding the big lines, not a quote. REST: `POST /api/projects/{id}/costs`, `GET …/costs.csv`
+
+### ✅ Compliance Frameworks
+
+- **Tools → Compliance** — **SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001** controls that a design can show or break, checked against the branch: encryption in transit (protocols on connections, or a stated TLS / mTLS policy) and at rest, secrets and key management, authentication at every entry point, role-based access, MFA, a gateway and a WAF in front of public services, network segmentation of data stores, audit logging, monitoring, backups and failover, data classification of stores (`data_classification` property), data residency ("all personal data stays in the EU"), retention, deletion on request (event logs need crypto-shredding), third-party agreements (DPA / BAA), card data kept off your systems, and guardrails in front of LLMs
+- Each control is **pass**, **fail**, **needs evidence** or **not applicable**, with what was found, the components and requirements involved, and a fix. Requirements, project memory and accepted decisions count as statements. A **score** per framework; **Show on canvas** highlights a control's components
+- **Evidence** — editors mark a control *met by process* or *not applicable* with a note (kept per project); viewers can read. The frameworks that apply are saved per project (suggested from the project text until then)
+- **Fix plan** — the `compliance.review` agent writes steps grounded in the open controls and proposes NFRs; **Add as requirement** puts one into the requirements list. Without a model, the checks' own fixes and requirement stubs are used
+- **Report** as Markdown, JSON or print-ready HTML (Save as PDF). A design check, not an audit or certification. REST: `GET /api/projects/{id}/compliance?branch=&frameworks=`, `PUT …/compliance/settings`, `PUT …/compliance/evidence`, `POST …/compliance/review`, `GET …/compliance.md|.json|.html`
+
+### ⚙ Generation — Infrastructure as Code, Tests & Documents
+
+- **Tools → Generate** — pick a kind and a format, preview every file in tabs (code view, copy), download a **zip**. Every file is built from the branch: its components (and their catalog mappings), connections, requirements, accepted decisions and project memory
+- **Infrastructure as code** — **Terraform** for the cloud the design targets (AWS, Azure or Google Cloud, chosen from the components' vendors; you can pick another): providers, variables (secrets as sensitive variables), one resource per component (databases, caches, queues, streams, buckets, identity, gateways, container services or a shared Kubernetes cluster with an image repository per service), outputs and a `tfvars` example; high availability and an EU region are switched on when the requirements ask for them. **docker-compose** runs the stack locally — managed services become their open-source equivalent from the catalog (Aurora → PostgreSQL, MSK → Kafka, Cognito → Keycloak), with health checks, volumes and connection URLs from the connections. **Kubernetes** — Deployments, Services, autoscalers and disruption budgets (from the scaling and availability NFRs), a ConfigMap of endpoints, an example Secret and a kustomization
+- **Tests** — acceptance tests from the acceptance criteria as **Gherkin** `.feature` files, **pytest** or **Playwright** skeletons (criteria already written as Given/When/Then are split as they are), plus a **contract / integration checklist per connection** that knows its protocol (HTTP, gRPC, WebSocket, SQL, cache, messaging, third-party APIs)
+- **Documents** — an **SRS** (IEEE 830 sections: purpose, scope, functions, users, constraints, interfaces, FR/NFR, traceability), a **BRD** (objectives, stakeholders, scope, success metrics, risks) and a **runbook per service and data store** (health checks, scaling, failure modes, backups, alerts with thresholds read from the NFRs)
+- **Checked before you see it** — Terraform is checked for balanced braces, unterminated strings, duplicate names, undeclared variables and references to missing resources; YAML must parse (compose: real `depends_on`, no host port used twice; Kubernetes: valid names, Service selectors that match a Deployment, kustomization files that exist); Python must parse; Gherkin needs Given/When/Then in order. The dialog shows any failed check
+- **AI (optional, editors)** — the `generate.iac`, `generate.tests` and `generate.docs` agents refine the built-in version. An AI file is kept only if it is still well-formed, keeps every section of the document and cites only real requirement and decision ids; otherwise the built-in file stays and the dialog says why. Without a model, or for viewers, the built-in version is served. Nothing is stored
+- REST: `POST /api/projects/{id}/generate` `{kind: iac|tests|docs, target: terraform|compose|k8s|gherkin|pytest|playwright|srs|brd|runbook, branch, ai, cloud}` → `{files: [{path, content}], engine: ai|offline, notes, checks, valid}`; `POST …/generate/zip` (the previewed files, or generated again). MCP: `generate_artifacts(project_id, kind, target, branch, use_ai, cloud)`
 
 ---
 
@@ -210,7 +259,7 @@ One assistant panel with three modes, docked **left**, **right** or **floating**
 ### 🤖 MCP for AI Agents
 
 - **Remote MCP server** at `/mcp` (Streamable HTTP) with **OAuth 2.1** (dynamic client registration, PKCE, consent page, rotating refresh tokens, revocation) or personal access tokens
-- Works with **Claude Code, Claude.ai, Claude Desktop, Codex** and other MCP clients; **41 tools**, org-scoped, read-only or read & edit, capped by your role
+- Works with **Claude Code, Claude.ai, Claude Desktop, Codex** and other MCP clients; **48 tools** (incl. Jira push, sync and import), org-scoped, read-only or read & edit, capped by your role
 - Agent edits go through the same pipeline as the canvas and appear live, attributed to "*user* via MCP"
 - Coding loop: **list_tasks → get_task_brief → implement → report_progress** (status and PR link show in the activity)
 
@@ -266,6 +315,7 @@ uv run --with ragas==0.3.9 --with "langchain-community>=0.3,<0.4" archflow-eval 
 - **JSON / YAML** — the full project (branch state, decisions, memory, versions and branches metadata) with `schema: archflow.project` and `schema_version` for tools; `exports.load_document` reads it back
 - **CLAUDE.md, AGENTS.md, .cursorrules** for coding agents, previewed before download: stack, services and their responsibilities, data stores, NFRs as constraints, accepted ADRs as rules and a folder layout, all derived from the model, plus project-specific conventions, do / don't and testing guidance written by the `exports.agent_guide` agent (skeleton only without an AI model). The OpenSpec download (`openspec.zip`) includes the three files at its root
 - REST: `GET /api/projects/{id}/export/spec.md | spec.html | project.json | project.yaml`, `POST …/export/guides`, `GET …/export/guides/{claude-md|agents-md|cursorrules}` (any project role); MCP: `export_spec` (markdown or json)
+- **Generated files** (Tools → Generate, see *Generation* above): Terraform, docker-compose, Kubernetes, Gherkin / pytest / Playwright tests, SRS, BRD and runbooks, previewed file by file and downloaded as a **zip**
 
 ---
 
@@ -273,6 +323,14 @@ uv run --with ragas==0.3.9 --with "langchain-community>=0.3,<0.4" archflow-eval 
 
 - Email + password accounts (scrypt), opaque session token in an `HttpOnly`, `SameSite=Lax` cookie with a 14-day sliding expiry; sign-in attempts rate limited per email + IP
 - Organizations with six roles, single-use invite links, org-scoped projects
+- **Single sign-on (OpenID Connect)** per organization — Okta, Microsoft Entra ID, Google Workspace, Auth0, Keycloak…:
+  authorization code with PKCE, state and nonce; ID tokens checked against the provider's JWKS (signature, issuer,
+  audience, expiry, nonce). People sign in with their work email; new people join the org automatically with a
+  default role. Admins can **require SSO** (owners keep a password fallback). The client secret is encrypted and never shown again
+- **Two-step sign-in (TOTP)** — any authenticator app, 10 one-time recovery codes (stored hashed), codes rate limited
+  and never accepted twice. Admins can **require it for the org**: members without it are asked to turn it on first
+- **Per-project roles** — give a member a different role on one project (viewer, reviewer, editor or admin), from
+  **Tools → Project access**; org admins and project admins manage them
 - **CSRF / CORS** — unsafe requests must come from an allowed origin; CORS allows exactly those origins
 - **Real-time tickets** — a 2-minute HMAC-signed ticket opens the live document; viewers and reviewers connect **read-only**
 
@@ -317,7 +375,35 @@ flowchart LR
     API --> LLM
     API --> CG --> GH
     API --> OS
+    API -. "optional: rate limits · jobs · fan-out" .-> R[("Redis")]
 ```
+
+**Scale-out (optional).** One API process needs nothing but the database. To run several API instances behind a
+load balancer, set `ARCHFLOW_REDIS_URL` (see `backend/archflow/scale.py`):
+
+- **Rate limits.** The per-org LLM limit and the sign-in limiter are shared. They use atomic Redis counters; the
+  keys are hashed, so no e-mail address is stored in Redis.
+- **Real-time fan-out.** Each instance delivers `/ws` events to its own sockets and publishes them on a Redis
+  channel per room (`archflow:room:<project>:<branch>`). A subscriber on every other instance delivers them to
+  its sockets. Messages carry the sender's instance id, so the sending instance never delivers them twice.
+  Presence spans instances. The subscriber logs failures and reconnects with backoff.
+- **Jobs.** Status and progress of repository analyses and document and meeting imports are kept in Redis
+  hashes with a 24 h TTL. Any instance answers `GET /api/projects/{pid}/jobs/{id}` and
+  `…/codegraph/jobs/{id}`, and a cancel sent to any instance stops the job. The work itself runs on the
+  instance that accepted it; an import's SSE stream stays on that instance.
+- **Health.** `/api/health` reports the Redis mode and the subscriber state. `/api/ready` pings Redis but does not
+  fail on it.
+- **Without Redis**, all of this stays in-process, as before. If a configured Redis fails, each call falls back
+  to in-process behaviour and logs a warning.
+- **Still per instance:**
+  - LLM circuit breakers and router cooldowns.
+  - The AI-budget cache (at most 15 s stale).
+  - Knowledge-base and code-graph caches, which hold derived data.
+- **Already shared:** OAuth consent requests, codes and tokens are in the database, and `/mcp` is stateless HTTP.
+- **Collab server.** Hocuspocus keeps each live Yjs document in the memory of one process. Run a single `collab`
+  instance, or route each document to a fixed instance (sticky routing by the `<project>:<branch>` document
+  name). The API's `ARCHFLOW_COLLAB_URL` patches must go through the same routing.
+  `@hocuspocus/extension-redis` is the path to running several active collab instances; it is not wired yet.
 
 ### The Operation Pipeline
 
@@ -426,7 +512,14 @@ Any feature calls llm.py
 | **Cloud documentation (MCP)** | Microsoft Learn MCP server, AWS Knowledge MCP server (hosted), AWS Documentation MCP server (local, optional) |
 | **Code analysis** | Public Git repositories (HTTPS), local graphs via `archflow-codegraph`; ~30 languages through tree-sitter |
 | **Observability** | Langfuse (optional LLM tracing) |
-| **Issue tracking** | Jira Cloud: preview, then push requirements as epics (one per owning component), stories with Given/When/Then criteria and story points, sub-tasks from the low-level design and "blocks" links from connections; idempotent re-push, 429 backoff, status read back next to requirements. Admins connect it per organization (API token encrypted); developers push |
+| **Issue tracking** | Jira Cloud, both ways. **Push**: preview, then push requirements as epics (one per owning component), stories with Given/When/Then criteria and story points, sub-tasks from the low-level design and "blocks" links from connections; idempotent re-push, 429 backoff. **Live status**: a Jira webhook (per-org secret, shown once, checked in constant time; Jira's HMAC `X-Hub-Signature` also accepted) updates issue status as it changes, with **Sync now** as the fallback; status chips (To Do / In Progress / Done) show on canvas components and requirements and update live. **Pull**: list the project's issues that are not linked yet (JQL, paginated) and import the chosen ones as requirements (description ADF → text, labels / type → FR or NFR, priority, acceptance criteria parsed from the description; optional `jira.import` AI mapping), linked so they are never imported twice. Admins connect it per organization (API token encrypted); developers push and import. MCP: `jira_push_preview`, `jira_push`, `jira_sync_status`, `jira_list_unlinked_issues`, `jira_import_issues` |
+| **GitHub Issues** | Preview, then push requirements as issues (`REQ-001: …`, description, acceptance criteria as a task list, priority, implementing components, source; labels `archflow`, `priority:<p>`, `requirement` / `nfr:<category>`). Re-pushes update changed issues and skip unchanged ones (content hash), an unrecorded issue is found again by a hidden marker, a removed requirement closes its issue; issue state is read back next to requirements. GitHub Enterprise Server via its `/api/v3` URL |
+| **Confluence** | Publish a branch's architecture specification (the Markdown / PDF export) as a page in a space, optionally under a parent page; re-publishing updates the same page as a new version and skips an unchanged spec. Can reuse the org's Jira credentials on the same Atlassian site |
+| **Slack / Microsoft Teams** | Incoming webhooks (Slack, Teams Workflows) get a short message with a link back when a version is saved, a review is requested or answered, a document or meeting is imported, or the project is pushed to Jira / GitHub / Confluence; each channel chooses its events. Sent in the background (a failing webhook never fails the action; the last error is shown in settings) |
+| **Meetings** | Transcripts from Teams, Zoom and Google Meet (`.vtt`, `.srt`, text, Word); recordings through OpenAI Whisper (or any LiteLLM speech-to-text model) |
+| **Embeddings** | Gemini or OpenAI embeddings for the knowledge base (any LiteLLM embedding model via `ARCHFLOW_MODEL_EMBEDDING`) |
+
+GitHub, Confluence, Slack and Teams are connected per organization by admins under **Integrations** on the projects page; tokens and webhook URLs are encrypted with `ARCHFLOW_SECRET_KEY` and never shown again (only their last 4 characters). Outbound requests go only to public https hosts and never follow redirects.
 
 ---
 
@@ -447,7 +540,8 @@ Any feature calls llm.py
 | **MCP** | MCP Python SDK (Streamable HTTP, OAuth 2.1) |
 | **Security** | scrypt passwords, HttpOnly session cookies, AES-256-GCM secrets, HMAC collab tickets, SSRF guards |
 | **Observability** | Built-in agent traces (input, output, LLM and tool calls, cost); OpenTelemetry export; Langfuse (optional) |
-| **Deployment** | Docker Compose (nginx web, API, collab, Postgres), GitHub Actions CI |
+| **Scale-out** | Redis (optional, redis-py asyncio): shared rate limits, job state and WebSocket fan-out |
+| **Deployment** | Docker Compose (nginx web, API, collab, Postgres, optional Redis), GitHub Actions CI |
 
 ---
 
@@ -507,6 +601,21 @@ npm run dev
 
 Open [http://localhost:5173](http://localhost:5173) (use `localhost` exactly — the origin check rejects other hosts).
 
+**Database.** With `DATABASE_URL` empty the API uses SQLite at `backend/data/archflow.db`, so you don't need Docker or Postgres. If your `.env` points `DATABASE_URL` at Postgres and Postgres isn't running (Docker stopped, for example), either start it with `docker compose up -d postgres` or override the value for this run only. Values already set in the environment take precedence over `.env`:
+
+```bash
+DATABASE_URL= uv run uvicorn archflow.main:app --reload --port 8000                 # bash / Git Bash
+$env:DATABASE_URL=""; uv run uvicorn archflow.main:app --reload --port 8000          # PowerShell
+```
+
+**Check that everything is up:**
+
+```bash
+curl -s localhost:8000/api/health     # API → 200
+curl -sI localhost:5173 | head -1     # web app → 200
+# the collab terminal prints "[collab] listening on :1234"
+```
+
 ### 4. First steps
 
 1. **Create an account** — the first account becomes owner of every existing organization
@@ -514,6 +623,10 @@ Open [http://localhost:5173](http://localhost:5173) (use `localhost` exactly —
 3. **New project** — start blank or from the **AI customer-support** example
 4. **Assistant → Design** — describe your idea, answer the questions, apply an architecture
 5. **Invite a teammate** — **Members & invites** → create a link; open it in a private window to see multiplayer
+6. **Price it** — **Tools → Cost estimate** gives monthly production and staging cost per component, plus a CSV export. With AI on, it takes about 15 seconds
+7. **Add knowledge** — **Tools → Knowledge base** → upload PRDs, policies or transcripts, then use **Ask** for answers with citations
+8. **Import a meeting** — **Requirements → 🎙 Meeting** → upload a `.vtt`, `.srt`, `.docx` or recording and review the proposed requirements, decisions and action items
+9. **Connect tools** (admins) — **Integrations** on the projects page: GitHub Issues, Confluence, Slack and Teams
 
 ### 5. (Optional) Repository analysis
 
@@ -546,7 +659,7 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 | `DATABASE_URL` | — | `postgresql://…` switches storage to Postgres |
 | `ARCHFLOW_DB` | `backend/data/archflow.db` | SQLite path when `DATABASE_URL` is unset (`:memory:` for tests) |
 | `POSTGRES_PASSWORD` | — | Password for the Postgres container |
-| `REDIS_URL` | — | Redis (local compose) |
+| `ARCHFLOW_REDIS_URL` | — | Optional shared Redis for several API instances (see [Scale-out](#scale-out)) |
 | `ARCHFLOW_COLLAB_URL` | `http://localhost:1234` | Where the API pushes server-side edits into live documents; empty disables it |
 | `ARCHFLOW_INTERNAL_TOKEN` | — | **Set it.** Shared secret between the API and the collab server (also signs collab tickets) |
 | `COLLAB_PORT` / `ARCHFLOW_API` | `1234` / `http://localhost:8000` | Collab server settings |
@@ -569,7 +682,12 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 | `ARCHFLOW_DOCS_AZURE` | `https://learn.microsoft.com/api/mcp` | Azure documentation MCP server (URL, `stdio:<command>` or `off`) |
 | `ARCHFLOW_DOCS_AWS` | `https://knowledge-mcp.global.api.aws` | AWS documentation MCP server, e.g. `stdio:uvx awslabs.aws-documentation-mcp-server@latest` for the local one |
 | `ARCHFLOW_REDACT` | `on` | What is removed from every model request: `on` (emails, phone, card and IBAN numbers, put back into the answer; and secrets — cloud/API keys, tokens, JWTs, private keys, `password=…` — never sent nor returned), `secrets` (secrets only) or `off`. Secrets in answers are masked; counts per category and prompt-injection signals in untrusted content are recorded in the run's trace |
-| `ARCHFLOW_INTAKE_MAX_MB` | `20` | Largest document accepted by **Requirements → Import** |
+| `ARCHFLOW_INTAKE_MAX_MB` | `20` | Largest document accepted by **Requirements → Import**, meeting import and the knowledge base |
+| `ARCHFLOW_MODEL_EMBEDDING` | Gemini, else OpenAI | Embedding model for the knowledge base (LiteLLM id); `ARCHFLOW_EMBEDDINGS=off` keeps it keyword-only |
+| `ARCHFLOW_MODEL_TRANSCRIBE` | `openai/whisper-1` | Speech-to-text model for meeting recordings; `ARCHFLOW_TRANSCRIBE=off` never sends audio (recordings cannot be redacted) |
+| `ARCHFLOW_KB_MAX_DOCS` | `200` | Documents per project knowledge base |
+| `ARCHFLOW_COST_PRICES` | — | Override cost-estimate prices, e.g. `{"aws:db.relational": {"vcpu_hour": 0.07}}` |
+| `ARCHFLOW_ALLOW_ANY_WEBHOOK` | `false` | Allow notification webhooks on hosts other than Slack's and Microsoft's (still public https only) |
 | `ARCHFLOW_PROMPTS` | — | Pin prompt versions, e.g. `compare.evaluate=v1,design.turn=v2` (default: each prompt's `active` version) |
 | `ARCHFLOW_TRACES` | `full` | Agent traces: `full` (with prompt and response text), `metadata` (tokens, cost, timings only) or `off` |
 | `ARCHFLOW_TRACE_RETENTION_DAYS` | `30` | How long traces are kept |
@@ -584,9 +702,11 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 |---|---|---|
 | `ARCHFLOW_PUBLIC_URL` | `http://localhost:8000` | Public base URL of the API (OAuth issuer, MCP resource, `Secure` cookies on https) |
 | `ARCHFLOW_ALLOWED_ORIGINS` | `http://localhost:5173` | Browser origins allowed to call the API with the session cookie |
-| `ARCHFLOW_SECRET_KEY` | generated | Encrypts organizations' AI keys. If unset, the API generates `secret.key` next to the database — **set it explicitly in production** and back it up with the database |
+| `ARCHFLOW_SECRET_KEY` | generated | Encrypts organizations' AI keys, integration tokens, SSO client secrets and two-step sign-in secrets. If unset, the API generates `secret.key` next to the database — **set it explicitly in production** and back it up with the database |
 | `ARCHFLOW_SECRET_KEY_FILE` | — | Where to keep the generated key instead |
 | `ARCHFLOW_OPEN_SIGNUP` | `true` | `false` = sign-up by invite link only (the first account is always allowed) |
+| `ARCHFLOW_SSO_CALLBACK_URL` | `<first allowed origin>/api/auth/sso/callback` | Redirect URL registered at your identity provider for single sign-on |
+| `ARCHFLOW_ALLOW_PRIVATE_SSO_URLS` | off | `true` allows an identity provider on a private network (and plain http) |
 | `ARCHFLOW_MCP_ALLOWED_HOSTS` | — | Extra host names allowed to reach `/mcp` (your tunnel or domain) |
 | `ARCHFLOW_ACCESS_TOKEN_TTL` / `ARCHFLOW_REFRESH_TOKEN_TTL` | `3600` / `2592000` | OAuth token lifetimes (seconds) |
 
@@ -600,6 +720,14 @@ claude mcp add --transport http archflow http://localhost:8000/mcp --header "Aut
 | `ARCHFLOW_CODEGRAPH_JOBS` / `_PROCS` | `1` / `2` | Concurrent analyses / parser processes per analysis |
 | `ARCHFLOW_ALLOW_LOCAL_REPOS` | off | `1` lets developers analyse directories on the server (self-hosted/dev only) |
 | `ARCHFLOW_ALLOW_UNPINNED_GIT` | off | With git older than 2.37, URL analysis is refused unless this is `1` (developer machines only) |
+
+### Scale-out
+
+| Variable | Default | Description |
+|---|---|---|
+| `ARCHFLOW_REDIS_URL` | — | e.g. `redis://redis:6379/0` (`rediss://` for TLS). Shares rate limits, job status/cancel and real-time fan-out between API instances. Unset = everything in-process (single instance) |
+| `ARCHFLOW_REDIS_PREFIX` | `archflow` | Key and channel prefix, to share one Redis between deployments |
+| `ARCHFLOW_INSTANCE_ID` | random | Name of this API instance in fan-out messages, presence and `/api/health` |
 
 ### Production Compose
 
@@ -622,6 +750,7 @@ See [`.env.example`](.env.example) for the full annotated list.
 | `api` | `backend/Dockerfile` | internal | FastAPI app (OpenSpec, diagram renderer, optional code analysis) |
 | `collab` | `collab/Dockerfile` | internal | Hocuspocus real-time collaboration server |
 | `postgres` | `postgres` image | internal | Database (volume `pgdata`) |
+| `redis` | `redis` image | internal | Optional (profile `scale`): `docker compose --profile scale …` and `ARCHFLOW_REDIS_URL=redis://redis:6379/0` to run several API replicas |
 
 ```bash
 cp .env.example .env   # set POSTGRES_PASSWORD, ARCHFLOW_INTERNAL_TOKEN, ARCHFLOW_SECRET_KEY, ARCHFLOW_PUBLIC_URL
@@ -635,7 +764,7 @@ See [docs/deploy.md](docs/deploy.md) for operations, backups and current single-
 | Service | Port | Description |
 |---|---|---|
 | `postgres` | `5432` | Local Postgres for running the API against it |
-| `redis` | `6379` | Local Redis |
+| `redis` | `6379` | Local Redis (`ARCHFLOW_REDIS_URL=redis://localhost:6379/0` to try scale-out) |
 
 ### Useful commands
 
@@ -684,7 +813,7 @@ ArchFlow/
 │   │   ├── collab_sync.py       # API ↔ collab server (field-level patches)
 │   │   ├── users.py · auth.py · authz.py · accounts.py  # Accounts, sessions, roles, orgs, CSRF
 │   │   ├── secrets_box.py       # AES-256-GCM encryption of org secrets
-│   │   ├── mcp_remote.py        # Remote MCP server (OAuth 2.1, 41 tools)
+│   │   ├── mcp_remote.py        # Remote MCP server (OAuth 2.1, 48 tools)
 │   │   ├── mcp_server.py        # Local stdio MCP server
 │   │   ├── store.py             # persistence (one store for SQLite and Postgres)
 │   │   ├── db/                  # SQLAlchemy models, column types, Alembic migrations
@@ -724,6 +853,10 @@ ArchFlow/
 │   │   ├── collab.ts · realtime.ts  # Yjs provider, WebSocket events
 │   │   ├── assistant.ts · suggestions.ts  # Conversation state, project-based suggestions
 │   │   └── layout.ts · exportImage.ts  # Tidy-up layout, PNG/SVG export
+│   ├── e2e/                     # Playwright end-to-end suite
+│   ├── marketing/               # Recorded demo and tutorial videos (see Videos)
+│   │   ├── demo.spec.ts · build.py      # Short marketing demo
+│   │   └── tutorial/            # In-depth tutorial: chapters, narration, editor
 │   └── Dockerfile
 ├── deploy/nginx.conf.template   # Web container config
 ├── docs/
@@ -759,18 +892,67 @@ An end-to-end AI evaluation on a complex spec (a multi-region telehealth platfor
 
 ---
 
+## 🎬 Videos
+
+Two videos are recorded from the real app by Playwright, not edited by hand, so they can be re-made after any UI change.
+
+**In-depth tutorial** ([watch on YouTube](https://youtu.be/hqfFbIlfeHc), source in `frontend/marketing/tutorial/`): one complex production system, *PayFlow · Global Payments Platform*, designed end to end with the real AI, 27 minutes at 1.5× speed in 1080p with narration and YouTube chapters:
+
+| # | Chapter | What it shows |
+|---|---|---|
+| 1 | Your workspace | Sign up and sign in, invite your team, AI models and budget, a new project |
+| 2 | Requirements | PRD import, a meeting transcript, traceability, the knowledge base |
+| 3 | High-level design | Guided questions, architecture options with pros, cons and cost, drafts |
+| 4 | Architecture decision | Compare drafts with weighted priorities, record an ADR, adopt it into main |
+| 5 | Canvas and assistant | Canvas tour, catalog, trace links, cloud conversion, Edit and Ask with AI |
+| 6 | Low-level design | Internals of each component: modules, API endpoints, tables, events; hand edits; C4, sequence, ER and deployment diagrams |
+| 7 | Production readiness | Health score, AI review board, cost estimate, PCI DSS, SOC 2 and GDPR |
+| 8 | From design to code | Terraform, Kubernetes, tests, SRS, runbooks, diagram export, Vibe code (OpenSpec), MCP |
+| 9 | Code and architecture | Code graph, reconstruct the architecture, drift, change impact |
+| 10 | Team workflow | Versions and approval, branch and merge, compare and restore, a teammate joins live, @mentions, access |
+
+```bash
+cd frontend
+# record (fresh API, collab and web servers on their own ports; real AI from backend/.env)
+E2E_REAL_AI=1 npx playwright test -c playwright.tutorial.config.ts             # all chapters
+E2E_REAL_AI=1 npx playwright test -c playwright.tutorial.config.ts -g "05"     # re-record one chapter
+# edit: narration (Microsoft neural voice), music, AI waits and loading screens cut short, chapters joined
+uv run --with edge-tts --with imageio-ffmpeg python marketing/tutorial/build.py           # all chapters
+uv run --with edge-tts --with imageio-ffmpeg python marketing/tutorial/build.py 06-lld    # rebuild one chapter
+SPEED=1 uv run --with edge-tts --with imageio-ffmpeg python marketing/tutorial/build.py   # normal speed (default 1.5)
+```
+
+Each chapter is recorded as 1080p frames plus a timeline of scenes and AI waits under `frontend/marketing/out/tutorial/<chapter>/`. The narration for each scene is in `marketing/tutorial/narration.json`. The result is `out/tutorial/ArchFlow-tutorial.mp4`, with the YouTube chapter list in `chapters.txt`. Record long runs in chapters (`-g`) rather than all at once: live sync can slow down late in a very long session.
+
+**Marketing demo** (`frontend/marketing/demo.spec.ts`): a short overview with offline AI, recorded with `npx playwright test -c playwright.video.config.ts` and edited with `python marketing/build.py marketing/out`.
+
+---
+
 ## 🗺️ Roadmap
 
 The full production plan is in [docs/production-plan.md](docs/production-plan.md). In rough order of leverage:
 
-1. **Per-project role overrides, SSO** and approvals on more objects than versions
+1. **Per-project role overrides, OIDC SSO and two-step sign-in** — ✅ done; next: SAML single sign-on, SCIM
+   provisioning, passkeys, and approvals on more objects than versions
 2. **Repository analysis**: GitHub App, drift on every push/PR, PR review comments
-3. **Jira sync** — ✅ push (epics, stories, sub-tasks, links) with dry-run preview and status pull are done; next: Jira
-   webhooks for live status, status shown on canvas components, and pulling new Jira issues back as requirements
+3. **Jira sync** — ✅ done both ways: push (epics, stories, sub-tasks, links) with dry-run preview, live status from Jira
+   webhooks (plus Sync now), status chips on canvas components and requirements, pulling Jira issues back as
+   requirements, and MCP tools for all of it; next: two-way field sync (summary and criteria edited in Jira) and
+   Jira Data Center webhooks
 4. **More diagrams** from the same model: ~~sequence, C4, ER, deployment, data flow~~ (done, with Mermaid / PlantUML export); still to do: agent graph, MCP topology
-5. **Document intake** — ~~SRS/PDF/Word/Markdown → requirements~~ (done); meeting transcripts → live canvas
-6. **Generation** of tests, infrastructure as code and documentation (SRS/BRD/runbooks)
-7. **Scale-out** — shared Redis for rate limits, jobs and real-time fan-out across API instances
+5. **Document intake** — ~~SRS/PDF/Word/Markdown → requirements~~ and ~~meeting transcripts and recordings → requirements,
+   decisions and action items~~ (done);
+   next: speaker diarization for uploaded recordings and live meeting capture
+6. **Generation** — ~~tests (Gherkin, pytest, Playwright, contract checklists), infrastructure as code (Terraform,
+   docker-compose, Kubernetes) and documentation (SRS, BRD, runbooks)~~ (done, Tools → Generate);
+   next: Helm charts, Pulumi / Bicep, OpenAPI-driven contract tests and `terraform validate` in a sandbox
+7. **Scale-out**
+   - **Done:** shared Redis (`ARCHFLOW_REDIS_URL`) for rate limits, job status and cancel, and real-time fan-out
+     and presence across API instances.
+   - **Next:** Redis for the Hocuspocus collab server, so several collab instances can be active (it needs sticky
+     routing by document today), and a durable job queue so jobs survive restarts.
+8. **Compliance** — ~~SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001 design checks, evidence and fix plans~~ (done); next:
+   evidence file uploads, compliance trend per version, and checks against deployed cloud configuration
 
 ---
 

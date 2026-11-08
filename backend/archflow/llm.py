@@ -638,6 +638,23 @@ def _names(exc: BaseException) -> set[str]:
     return {c.__name__ for c in type(exc).__mro__}
 
 
+_LAST_REFUSAL: dict[str, str] = {}  # breaker key -> why the provider last refused the key (shown while the circuit is open)
+
+
+def refusal_reason(exc: BaseException) -> str:
+    """A short, key-free reason for an auth-type failure: billing, an invalid key, no permission or an unknown model."""
+    text = str(exc).lower()
+    if "billing" in text or "outstanding balance" in text or "quota" in text and "exceeded" in text:
+        return "the provider account has a billing problem"
+    if "api key not valid" in text or "invalid api key" in text or "incorrect api key" in text or "invalid x-api-key" in text:
+        return "the API key was rejected"
+    if "not found" in text and "model" in text:
+        return "the model is not available for this key"
+    if "permission" in text or "forbidden" in text:
+        return "the key has no permission for this model"
+    return "the key was refused"
+
+
 def _classify(exc: BaseException) -> str:
     """'refused' | 'rate_limit' | 'transient' | 'auth' | 'bad_request' | 'unknown'."""
     names = _names(exc)
@@ -729,10 +746,12 @@ def _dispatch(group: str, org_id: str | None, **kwargs) -> Any:
 
     for tier_idx, tier in enumerate(tiers):
         # An org's own key gets its own breaker: one org's bad key must not trip the shared provider circuit.
-        breaker = _breaker(tier.model + (f"@{org_id}" if tier.provider or org_keys.get(_provider(tier.model)) else ""))
+        breaker_key = tier.model + (f"@{org_id}" if tier.provider or org_keys.get(_provider(tier.model)) else "")
+        breaker = _breaker(breaker_key)
         if not breaker.allow():
             log.info("llm skip model=%s group=%s reason=circuit_open", tier.model, group)
-            errors.append(f"{tier.model}: circuit open")
+            why = _LAST_REFUSAL.get(breaker_key)
+            errors.append(f"{tier.model}: {why}" if why else f"{tier.model}: circuit open")
             continue
         for attempt in range(max_attempts):
             total_calls += 1
@@ -754,7 +773,11 @@ def _dispatch(group: str, org_id: str | None, **kwargs) -> Any:
                 if kind in ("auth", "unknown"):
                     if kind == "unknown":
                         log.exception("unexpected LLM error from %s", tier.model)
-                    errors.append(f"{tier.model}: {kind} ({type(exc).__name__})")
+                    if kind == "auth":
+                        _LAST_REFUSAL[breaker_key] = refusal_reason(exc)
+                        errors.append(f"{tier.model}: {_LAST_REFUSAL[breaker_key]}")
+                    else:
+                        errors.append(f"{tier.model}: {kind} ({type(exc).__name__})")
                     break
                 # rate_limit / transient: back off on this tier, then re-dispatch to the next one
                 errors.append(f"{tier.model}: {kind}")
@@ -769,6 +792,7 @@ def _dispatch(group: str, org_id: str | None, **kwargs) -> Any:
                 time.sleep(delay)
                 continue
             breaker.success()
+            _LAST_REFUSAL.pop(breaker_key, None)
             usage = getattr(resp, "usage", None)
             log.info("llm ok group=%s model=%s served_by=%s org=%s latency_ms=%.0f total_ms=%.0f calls=%d "
                      "fallback_depth=%d prompt_tokens=%s completion_tokens=%s",
@@ -1093,3 +1117,141 @@ def test_connection(org_id: str | None, group: str = "reasoning") -> dict[str, A
 def default_chain(group: str) -> list[str]:
     """The server's default model chain for a group (environment / built-in), before checking keys."""
     return _group_models(group)
+
+
+# --------------------------------------------------------------------------- embeddings and transcription
+# Embedding models tried in order when ARCHFLOW_MODEL_EMBEDDING is not set: the first whose provider has a key.
+# (Anthropic has no embedding API.) Verified against litellm's model map.
+EMBEDDING_MODELS = (("gemini", "gemini/gemini-embedding-001"), ("openai", "openai/text-embedding-3-small"))
+EMBED_BATCH = 64
+EMBED_MAX_CHARS = 8000
+TRANSCRIBE_MODEL = "openai/whisper-1"
+TRANSCRIBE_USD_PER_MINUTE = 0.006
+
+
+def _flag_off(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("off", "0", "false", "no")
+
+
+def embedding_model(org_id: str | None = None) -> tuple[str, str | None] | None:
+    """(LiteLLM model id, API key) used for embeddings for this org, or None when none can be used: AI offline,
+    ``ARCHFLOW_EMBEDDINGS=off``, or no Gemini / OpenAI key (``ARCHFLOW_MODEL_EMBEDDING`` picks another model)."""
+    if _mode() == "offline" or _flag_off("ARCHFLOW_EMBEDDINGS"):
+        return None
+    org_keys = _org_keys(org_id)
+    chosen = os.environ.get("ARCHFLOW_MODEL_EMBEDDING", "").strip()
+    candidates = [(_provider(chosen), chosen)] if chosen else list(EMBEDDING_MODELS)
+    for provider, model in candidates:
+        keys = _keys(provider, org_keys)
+        if keys:
+            return model, keys[0]
+    return None
+
+
+def _call_with_retries(fn: Callable[[], Any], what: str) -> Any:
+    attempts = max(1, _env_int("ARCHFLOW_LLM_MAX_ATTEMPTS", 5))
+    base, cap = _env_float("ARCHFLOW_LLM_BACKOFF_BASE", 0.5), _env_float("ARCHFLOW_LLM_BACKOFF_CAP", 20.0)
+    for attempt in range(attempts):
+        try:
+            return fn()
+        except Exception as exc:  # noqa: BLE001 - classified below
+            kind = _classify(exc)
+            log.warning("%s error attempt=%d kind=%s type=%s", what, attempt + 1, kind, type(exc).__name__)
+            if kind not in ("rate_limit", "transient") or attempt + 1 >= attempts:
+                raise LLMUnavailable(f"{what} failed: {kind} ({type(exc).__name__})") from exc
+            hinted = _retry_after(exc)
+            time.sleep(min(cap, hinted if hinted is not None else _backoff(attempt, base, cap)))
+    raise LLMUnavailable(f"{what} failed")
+
+
+def embed(texts: list[str], org_id: str | None = None, model: str | None = None) -> tuple[str, list[list[float]]]:
+    """Embedding vectors for ``texts`` (same order) and the model that made them. ``model`` forces one model (a
+    query must be embedded with the model its index was built with). Personal data and secrets are replaced with
+    placeholders first, as for completions. Raises LLMUnavailable when no embedding model can be used."""
+    picked = embedding_model(org_id)
+    if picked is None:
+        raise LLMUnavailable("No embedding model is available (needs a Gemini or OpenAI key)")
+    name, key = picked
+    if model and model != name:
+        provider = _provider(model)
+        keys = _keys(provider, _org_keys(org_id))
+        if not keys:
+            raise LLMUnavailable(f"The index was built with {model}, which has no key now")
+        name, key = model, keys[0]
+    blocked = budget_block(org_id)
+    if blocked:
+        raise LLMBudgetExceeded(blocked)
+    import litellm
+
+    guard = redact.Redactor()
+    clean = [guard.redact(t[:EMBED_MAX_CHARS]) if guard.mode != "off" else t[:EMBED_MAX_CHARS] for t in texts]
+    redact.report({"redacted": dict(guard.counts), "injection": {}})
+    out: list[list[float]] = []
+    for start in range(0, len(clean), EMBED_BATCH):
+        batch = [t or " " for t in clean[start:start + EMBED_BATCH]]
+        _acquire_org(org_id)
+        t0 = time.monotonic()
+        kwargs: dict[str, Any] = {"model": name, "input": batch, "timeout": _env_float("ARCHFLOW_LLM_TIMEOUT", 120)}
+        if key:
+            kwargs["api_key"] = key
+        resp = _call_with_retries(lambda: litellm.embedding(**kwargs), f"embedding with {name}")
+        data = sorted(_get(resp, "data") or [], key=lambda d: _get(d, "index", 0))
+        vectors = [list(map(float, _get(d, "embedding") or [])) for d in data]
+        if len(vectors) != len(batch) or any(not v for v in vectors):
+            raise LLMUnavailable(f"{name} returned {len(vectors)} embeddings for {len(batch)} texts")
+        out += vectors
+        usage = _get(resp, "usage")
+        _record(org_id, "embedding", name, int(_get(usage, "prompt_tokens", 0) or 0), 0,
+                (time.monotonic() - t0) * 1000, resp)
+    return name, out
+
+
+def transcription_model(org_id: str | None = None) -> tuple[str, str | None] | None:
+    """(model, key) for speech-to-text (``ARCHFLOW_MODEL_TRANSCRIBE``, default OpenAI Whisper), or None."""
+    if _mode() == "offline" or _flag_off("ARCHFLOW_TRANSCRIBE"):
+        return None
+    model = os.environ.get("ARCHFLOW_MODEL_TRANSCRIBE", "").strip() or TRANSCRIBE_MODEL
+    keys = _keys(_provider(model), _org_keys(org_id))
+    return (model, keys[0]) if keys else None
+
+
+def transcribe(data: bytes, filename: str, org_id: str | None = None) -> dict[str, Any]:
+    """Speech to text: {model, text, segments: [{start, end, text}] (seconds)}. Audio cannot be redacted before it
+    is sent; set ARCHFLOW_TRANSCRIBE=off to keep recordings on the server. Raises LLMUnavailable."""
+    picked = transcription_model(org_id)
+    if picked is None:
+        raise LLMUnavailable("No speech-to-text model is available (needs an OpenAI key, or set "
+                             "ARCHFLOW_MODEL_TRANSCRIBE)")
+    model, key = picked
+    blocked = budget_block(org_id)
+    if blocked:
+        raise LLMBudgetExceeded(blocked)
+    _acquire_org(org_id)
+    import litellm
+
+    kwargs: dict[str, Any] = {"model": model, "file": (filename, data), "response_format": "verbose_json",
+                              "timeout": _env_float("ARCHFLOW_LLM_TIMEOUT", 120) * 3}
+    if key:
+        kwargs["api_key"] = key
+    t0 = time.monotonic()
+    resp = _call_with_retries(lambda: litellm.transcription(**kwargs), f"transcription with {model}")
+    segments = [{"start": float(_get(s, "start", 0) or 0), "end": float(_get(s, "end", 0) or 0),
+                 "text": str(_get(s, "text", "") or "").strip()} for s in (_get(resp, "segments") or [])]
+    text = str(_get(resp, "text", "") or "").strip()
+    minutes = (segments[-1]["end"] if segments else float(_get(resp, "duration", 0) or 0)) / 60
+    observers = _call_observers.get()
+    event = {"org_id": org_id or "", **{k: current_scope().get(k, "") for k in ("project_id", "prompt", "user_id")},
+             "feature": current_scope().get("feature", "other"), "group": "transcription", "model": model,
+             "prompt_tokens": 0, "completion_tokens": 0, "cost_usd": round(minutes * TRANSCRIBE_USD_PER_MINUTE, 6),
+             "cost_source": "estimate", "latency_ms": int((time.monotonic() - t0) * 1000)}
+    for observe in observers:
+        try:
+            observe(event)
+        except Exception:  # noqa: BLE001
+            log.exception("LLM call observer failed")
+    if _usage_recorder is not None:
+        try:
+            _usage_recorder(event)
+        except Exception:  # noqa: BLE001
+            log.exception("recording transcription usage failed")
+    return {"model": model, "text": text, "segments": segments}

@@ -96,7 +96,10 @@ export const ROLE_HELP: Record<Role, string> = {
   owner: "Everything, including organization settings and owners",
 };
 export interface Account { id: string; email: string; name: string; created_at: string; last_login_at: string | null }
-export interface Me { user: Account; orgs: (Org & { role: Role })[]; features: { ai_settings: boolean } }
+export interface Me {
+  user: Account; orgs: (Org & { role: Role })[]; features: { ai_settings: boolean; mfa?: boolean };
+  security?: MeSecurity;
+}
 export interface Member { org_id: string; user_id: string; email: string; name: string; role: Role; created_at: string }
 export interface Invite {
   id: string; org_id: string; email: string | null; role: Role; created_by: string | null; created_at: string; expires_at: number;
@@ -477,11 +480,108 @@ export interface IntakeProposal {
   source: Record<string, string>; duplicates: IntakeMatch[]; conflicts: IntakeMatch[]; selected: boolean;
 }
 export interface IntakeNote { text: string; section?: string; page?: number }
+/** One progress event while a document is imported; ``done``/``total`` count pages or parts. */
+export interface IntakeStep {
+  stage: "upload" | "read" | "split" | "extract" | "compare"; message: string; done?: number; total?: number;
+}
 export interface IntakeResult {
   engine: "llm" | "offline" | "mixed"; notes: string[];
   file: { name: string; type: string; pages: number | null; sections: number; chars: number; chunks: number };
+  /** The library that read the file and the model that extracted requirements ("" when the offline rules did). */
+  reader?: { library: string; model: string };
   requirements: IntakeProposal[]; assumptions: IntakeNote[]; constraints: IntakeNote[]; open_questions: IntakeNote[];
   stakeholders: string[];
+}
+
+// ---- meeting intake (transcripts and recordings) ----
+export interface MeetingProposal extends Omit<IntakeProposal, "section" | "page"> {
+  speaker: string; timestamp: string; agreement: "agreed" | "proposed" | "disputed";
+}
+export interface MeetingDecision {
+  id: string; title: string; decision: string; rationale: string; alternatives: string[]; decided_by: string;
+  timestamp: string; selected: boolean;
+}
+export interface MeetingAction { id: string; task: string; owner: string; due: string; timestamp: string; selected: boolean }
+export interface MeetingNote { text: string; timestamp?: string }
+export interface MeetingStep { stage: "upload" | "read" | "split" | "extract" | "compare" | "knowledge"; message: string; done?: number; total?: number }
+export interface MeetingResult {
+  engine: "llm" | "offline" | "mixed"; notes: string[];
+  file: { name: string; type: string; turns: number; speakers: string[]; duration: string; chars: number; chunks: number };
+  reader: { transcription: string; model: string };
+  summary: string; participants: string[];
+  requirements: MeetingProposal[]; decisions: MeetingDecision[]; action_items: MeetingAction[];
+  open_questions: MeetingNote[]; assumptions: MeetingNote[]; constraints: MeetingNote[];
+  knowledge?: { id: string; chunks: number; embedded: boolean };
+}
+
+// ---- knowledge base ----
+export interface KbDocument {
+  id: string; project_id: string; name: string; type: string; origin: "upload" | "import" | "meeting"; chars: number;
+  chunks: number; embedding_model: string; created_by: string; created_at: string; note?: string;
+}
+export interface KbStatus {
+  documents: KbDocument[]; embedding_model: string; stale: number; chunks: number; max_documents: number; ai_available: boolean;
+}
+export interface KbPassage {
+  id: number; document_id: string; document: string; type: string; ord: number; section: string; page: number | null;
+  locator: string; text: string; ref: string; score: number; keyword_rank: number | null; vector_score: number | null;
+}
+export interface KbCitation {
+  ref: string; quote: string; document_id: string; document: string; section: string; page: number | null; locator: string;
+}
+export interface KbAnswer {
+  question: string; engine: "llm" | "offline"; mode: "hybrid" | "keyword"; answerable: boolean; answer: string;
+  citations: KbCitation[]; follow_ups: string[]; passages: KbPassage[];
+}
+
+// ---- cost estimate ----
+export interface CostAssumption { value: number | string | boolean; source: string; text?: string }
+export type CostAssumptionKey = "monthly_active_users" | "peak_rps" | "storage_gb" | "egress_gb" | "availability" |
+  "llm_calls_per_user" | "llm_input_tokens" | "llm_output_tokens" | "emails_per_user" | "messages_per_user" | "region" |
+  "include_staging" | "staging_share";
+export interface CostLine {
+  node_id: string; name: string; type: string; kind: string; technology: string; category: string; vendor: string;
+  monthly: number; low: number; high: number; basis: string; confidence: "high" | "medium" | "low"; notes: string[];
+}
+export interface CostRange { monthly: number; low: number; high: number }
+export interface CostRecommendation {
+  title: string; detail: string; saving_monthly: number; components: string[]; tradeoff: string; effort: "low" | "medium" | "high";
+}
+export interface CostEstimate {
+  currency: string; price_date: string; branch: string; engine: "llm" | "offline";
+  assumptions: Record<CostAssumptionKey, CostAssumption>; high_availability: boolean; lines: CostLine[];
+  production: CostRange; staging: CostRange; total: CostRange; annual: CostRange; by_category: Record<string, number>;
+  drivers: { name: string; monthly: number; share: number }[]; unpriced: string[]; disclaimer: string;
+  budget?: { monthly: number; source: string; text: string; status: "within" | "at_risk" | "over" };
+  recommendations: CostRecommendation[]; questions: string[];
+}
+
+// ---- integrations (GitHub, Confluence, Slack, Teams) ----
+export type IntegrationKind = "github" | "confluence" | "slack" | "teams";
+export interface IntegrationState {
+  kind: IntegrationKind; label: string; configured: boolean; config: Record<string, any>; has_secret: boolean;
+  last4: string | null; updated_at: string | null;
+}
+export interface IntegrationSettings {
+  encryption: boolean; events: Record<string, string>;
+  jira: { configured: boolean; site_url: string; email: string };
+  integrations: Record<IntegrationKind, IntegrationState>;
+}
+export interface ExternalLinks { connected: boolean; repo?: string; space_key?: string; links: JiraLink[] }
+export interface GitHubPlanItem {
+  ref: string; action: "create" | "update" | "skip" | "close"; title: string; labels: string[]; body: string;
+  external_key: string; external_url: string; status: string;
+}
+export interface GitHubPlan {
+  items: GitHubPlanItem[]; counts: Record<"create" | "update" | "skip" | "close", number>; repo: string; include_nfr: boolean;
+}
+export interface GitHubPushResult {
+  repo: string; counts: { created: number; updated: number; closed: number; unchanged: number; failed: number };
+  results: { ref: string; title: string; action: string; status: "ok" | "skipped" | "error"; key: string; url: string; error: string }[];
+}
+export interface ConfluencePublish {
+  title: string; space_key: string; action: "create" | "update" | "skip"; chars: number; url: string; page_id: string;
+  dry_run: boolean; preview?: string; version?: number;
 }
 
 // ---- Jira Cloud push ----
@@ -489,6 +589,8 @@ export interface JiraSettings {
   /** False when the server cannot encrypt the token (no ARCHFLOW_SECRET_KEY): the connection cannot be saved. */
   enabled: boolean; configured: boolean; site_url: string; email: string; project_key: string;
   last4: string | null; updated_at: string | null;
+  /** Live status from Jira webhooks: whether a secret exists (it is only shown once, when created). */
+  webhook?: { configured: boolean; created_at: string | null; url: string };
 }
 export interface JiraTestResult {
   ok: boolean; account?: string; error?: string;
@@ -511,8 +613,79 @@ export interface JiraPlan {
   engine: "llm" | "offline"; items: JiraPlanItem[]; counts: Record<"create" | "update" | "skip", number>;
   by_type: Record<"epic" | "story" | "subtask" | "link", number>; mapping: string; project_key: string; site_url: string;
 }
+// ---- sign-in security: two-step sign-in (MFA), single sign-on, project roles ----
+export interface MeSecurity { auth_method: string; mfa_enabled: boolean; mfa_required: boolean; sso_required_orgs: string[] }
+export interface MfaChallenge { mfa_required: true; mfa_token: string }
+export interface MfaStatus {
+  enabled: boolean; pending: boolean; recovery_codes_left: number; available: boolean;
+  required_by: { id: string; name: string }[]; recovery_codes?: string[];
+}
+export interface SsoSettings {
+  enabled: boolean; issuer: string; client_id: string; secret_set: boolean; secret_last4: string | null;
+  domains: string[]; default_role: Role; require_sso: boolean;
+}
+export interface AuthSettings { sso: SsoSettings; require_mfa: boolean; callback_url: string; secrets_enabled: boolean; updated_at: string | null }
+export type ProjectRole = "viewer" | "reviewer" | "developer" | "admin";
+export interface ProjectRoleMember {
+  user_id: string; name: string; email: string; org_role: Role; project_role: ProjectRole | null; effective_role: Role;
+}
+export interface ProjectRoles { members: ProjectRoleMember[]; roles: ProjectRole[]; can_manage: boolean }
+
 export interface JiraPushResult {
   project_key: string; engine: string;
   counts: { created: number; updated: number; unchanged: number; failed: number };
   results: { ref: string; type: string; summary: string; action: string; status: "ok" | "skipped" | "error"; key: string; url: string; error: string }[];
+}
+
+// ---- Jira two-way sync (webhooks, pulling issues in) ----
+export interface JiraWebhookSetup {
+  secret: string; url: string; jql: string; events: string[]; steps: string[]; settings: JiraSettings;
+}
+export interface JiraIssuePreview {
+  key: string; url: string; summary: string; issue_type: string; priority: string; labels: string[];
+  status: string; status_category: string; description: string;
+  requirement: Pick<Requirement, "title" | "description" | "kind" | "category" | "priority" | "actors" | "acceptance_criteria" | "status">;
+}
+export interface JiraIssuePage {
+  project_key: string; jql: string; issues: JiraIssuePreview[]; next_page_token: string | null; hidden_linked: number;
+}
+export interface JiraImportResult {
+  imported: { key: string; requirement_id: string; title: string; kind: string }[];
+  skipped: { key: string; reason: string }[]; engine: "llm" | "offline"; links: JiraLink[];
+}
+
+// ---- compliance frameworks ----
+export type ComplianceStatus = "pass" | "fail" | "needs_evidence" | "not_applicable";
+export type ComplianceEffective = ComplianceStatus | "met";
+export interface ComplianceEvidence { status: "" | "met" | "not_applicable"; note: string; updated_by: string | null; updated_at: string }
+export interface ComplianceControl {
+  id: string; title: string; description: string; checks: string[]; status: ComplianceStatus; effective: ComplianceEffective;
+  evidence: ComplianceEvidence | null; summary: string; components: string[]; component_names: string[];
+  requirements: string[]; fixes: string[];
+}
+export interface ComplianceFramework {
+  id: string; name: string; version: string; description: string; score: number | null;
+  counts: Record<"pass" | "met" | "needs_evidence" | "fail" | "not_applicable", number>; controls: ComplianceControl[];
+}
+export interface ComplianceProposal {
+  key: string; title: string; description: string; kind: "non_functional"; category: string;
+  priority: "low" | "medium" | "high" | "critical"; acceptance_criteria: string[]; controls: string[];
+}
+export interface ComplianceReport {
+  branch: string; saved: boolean; selected: string[]; suggested: string[];
+  available: { id: string; name: string; version: string; description: string }[];
+  frameworks: ComplianceFramework[]; proposals: ComplianceProposal[]; disclaimer: string;
+}
+export interface ComplianceRemediation {
+  summary: string; engine: "llm" | "offline"; questions: string[]; requirements: ComplianceProposal[];
+  steps: { controls: string[]; title: string; detail: string; components: string[]; effort: "low" | "medium" | "high" }[];
+}
+
+// ---- generated artifacts (infrastructure as code, tests, documents) ----
+export type GenerationKind = "iac" | "tests" | "docs";
+export type GenerationTarget = "terraform" | "compose" | "k8s" | "gherkin" | "pytest" | "playwright" | "srs" | "brd" | "runbook";
+export interface GeneratedFile { path: string; content: string }
+export interface GenerationResult {
+  kind: GenerationKind; target: GenerationTarget; branch: string; engine: "ai" | "offline"; cloud?: "aws" | "azure" | "gcp";
+  files: GeneratedFile[]; notes: string[]; checks: { path: string; ok: boolean; detail: string }[]; valid: boolean;
 }

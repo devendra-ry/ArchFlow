@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Me, Role, User } from "../types";
+import { MfaDialog } from "./SecurityDialogs";
+import { onMenuKeyDown } from "./Select";
 
 interface Props {
   me: Me;
@@ -13,6 +15,7 @@ interface Props {
 /** Avatar button with account details, cursor colour and sign out. */
 export function UserMenu({ me, user, colors, onColor, onLogout, role }: Props) {
   const [open, setOpen] = useState(false);
+  const [mfaOpen, setMfaOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -28,7 +31,7 @@ export function UserMenu({ me, user, colors, onColor, onLogout, role }: Props) {
         <span className="avatar" style={{ background: user.color }}>{me.user.name[0]?.toUpperCase()}</span>
       </button>
       {open && (
-        <div className="user-menu-pop" role="menu">
+        <div className="user-menu-pop af-menu" role="menu" onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); else onMenuKeyDown(e); }}>
           <div><b>{me.user.name}</b></div>
           <div className="muted small">{me.user.email}</div>
           {role && <div className="small">Role here: <b>{role}</b></div>}
@@ -43,9 +46,13 @@ export function UserMenu({ me, user, colors, onColor, onLogout, role }: Props) {
               </div>
             </div>
           )}
+          <button role="menuitem" onClick={() => { setOpen(false); setMfaOpen(true); }}>
+            Two-step sign-in{me.security ? (me.security.mfa_enabled ? " · on" : " · off") : ""}
+          </button>
           <button role="menuitem" onClick={onLogout}>Sign out</button>
         </div>
       )}
+      {mfaOpen && <MfaDialog onClose={() => setMfaOpen(false)} />}
     </div>
   );
 }

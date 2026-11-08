@@ -39,6 +39,12 @@ FEATURES: list[tuple[str, str]] = [  # (path pattern after /api/projects/{pid}, 
     (r"/merge", "merge"),
     (r"/codegraph", "code-analysis"),
     (r"/requirements/import", "intake"),
+    (r"/meetings", "meetings"),
+    (r"/knowledge", "knowledge"),
+    (r"/costs", "costs"),
+    (r"/generate", "generation"),
+    (r"/(github|confluence)", "integrations"),
+    (r"/jira", "jira"),
 ]
 _PROJECT = re.compile(r"^/api/projects/([^/]+)(/.*)?$")
 

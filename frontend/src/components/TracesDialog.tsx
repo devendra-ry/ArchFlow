@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { api } from "../api";
 import type { AiSpan, AiTrace, AiTraceSummary, PromptInfo } from "../types";
 import { FEATURE_LABEL, Modal, tokens, usd } from "./OrgDialogs";
+import { Select } from "./Select";
 
 interface Props { orgId: string; orgName: string; onClose: () => void }
 
@@ -185,17 +186,12 @@ export function TracesDialog({ orgId, orgName, onClose }: Props) {
       {tab === "runs" && !openId && (
         <>
           <div className="row gap wrap">
-            <select value={feature} onChange={(e) => setFeature(e.target.value)} aria-label="Feature">
-              <option value="">All features</option>
-              {Object.entries(FEATURE_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-            </select>
-            <select value={person} onChange={(e) => setPerson(e.target.value)} aria-label="Person">
-              <option value="">Everyone</option>
-              {people.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-            </select>
-            <select value={status} onChange={(e) => setStatus(e.target.value)} aria-label="Status">
-              <option value="">Any status</option><option value="ok">OK</option><option value="error">Errors</option>
-            </select>
+            <Select size="sm" value={feature} onChange={setFeature} aria-label="Feature"
+              options={[{ value: "", label: "All features" }, ...Object.entries(FEATURE_LABEL).map(([k, v]) => ({ value: k, label: v }))]} />
+            <Select size="sm" value={person} onChange={setPerson} aria-label="Person"
+              options={[{ value: "", label: "Everyone" }, ...people.map((p) => ({ value: p.id, label: p.name }))]} />
+            <Select size="sm" value={status} onChange={setStatus} aria-label="Status"
+              options={[{ value: "", label: "Any status" }, { value: "ok", label: "OK" }, { value: "error", label: "Errors" }]} />
             <button className="small" onClick={() => load()}>Refresh</button>
             <span className="grow" />
             <span className="tiny muted">{rows.length} runs · {tokens(totals.tokens)} tokens · {usd(totals.cost)}{totals.errors ? ` · ${totals.errors} errors` : ""}</span>

@@ -32,7 +32,9 @@ from .db import migrate
 from .db.models import (Activity, AITrace, AIUsage, ApiToken, Approval, Base, Branch, CodeGraph, Comment, Conversation, ConversationMessage,
                         Decision, Invite, Membership, Notification, OAuthClient, OAuthCode, OpenSpecChange, OpenSpecFile, Org, OrgAIBudget,
                         OrgApprovalPolicy, OrgAIConfig, OrgAIKey, Project, ProjectMemory, RequirementRevision, User, UserSession, Version,
-                        YDoc, ExternalLink, OrgJiraConnection)
+                        YDoc, ExternalLink, OrgJiraConnection, KbChunk, KbDocument, OrgIntegration,
+                        ComplianceEvidence, ComplianceSettings, OrgAuthSettings, ProjectRole,
+                        UserMfa)
 from .db.types import now
 from .models import ProjectState
 
@@ -83,7 +85,16 @@ INVITE_COLS = ("id", "org_id", "email", "role", "created_by", "created_at", "exp
 PROJECT_COLS = ("id", "name", "description", "created_at", "org_id")
 EXTERNAL_LINK_COLS = ("object_kind", "object_id", "external_key", "external_url", "content_hash", "status",
                       "status_category", "status_checked_at", "updated_at")
-JIRA_CONNECTION_COLS = ("org_id", "site_url", "email", "ciphertext", "last4", "project_key", "updated_by", "updated_at")
+JIRA_CONNECTION_COLS = ("org_id", "site_url", "email", "ciphertext", "last4", "project_key", "webhook_ciphertext",
+                        "webhook_created_at", "updated_by", "updated_at")
+INTEGRATION_COLS = ("org_id", "kind", "config", "ciphertext", "last4", "updated_by", "updated_at")
+COMPLIANCE_EVIDENCE_COLS = ("framework", "control_id", "status", "note", "updated_by", "updated_at")
+KB_DOCUMENT_COLS = ("id", "project_id", "name", "type", "origin", "chars", "chunks", "embedding_model", "created_by",
+                    "created_at")
+KB_CHUNK_COLS = ("id", "document_id", "ord", "section", "page", "locator", "text", "embedding")
+AUTH_SETTINGS_COLS = ("org_id", "sso_enabled", "issuer", "client_id", "ciphertext", "last4", "domains", "default_role",
+                      "require_sso", "require_mfa", "updated_by", "updated_at")
+AUTH_SETTINGS_FIELDS = AUTH_SETTINGS_COLS[1:-2]
 TOKEN_COLS = ("id", "kind", "org_id", "user_name", "user_id", "scopes", "client_id", "name", "resource",
               "created_at", "expires_at", "last_used_at", "revoked")
 
@@ -268,6 +279,8 @@ class Store:
 
     def remove_member(self, org_id: str, user_id: str) -> bool:
         with self._s() as s:
+            s.execute(delete(ProjectRole).where(ProjectRole.user_id == user_id, ProjectRole.project_id.in_(
+                select(Project.id).where(Project.org_id == org_id))))
             return s.execute(delete(Membership).where(Membership.org_id == org_id,
                                                       Membership.user_id == user_id)).rowcount > 0
 
@@ -308,17 +321,18 @@ class Store:
         with self._s() as s:
             s.execute(update(User).where(User.id == user_id).values(last_login_at=now()))
 
-    def create_session(self, token_hash: str, user_id: str, expires_at: float, user_agent: str = "") -> None:
+    def create_session(self, token_hash: str, user_id: str, expires_at: float, user_agent: str = "",
+                       auth_method: str = "password") -> None:
         with self._s() as s:
             s.add(UserSession(token_hash=token_hash, user_id=user_id, created_at=now(), expires_at=expires_at,
-                              user_agent=user_agent[:300]))
+                              user_agent=user_agent[:300], auth_method=auth_method))
 
     def get_session(self, token_hash: str) -> dict[str, Any] | None:
         """Active session (not revoked, not expired)."""
         with self._s() as s:
             u = s.scalars(select(UserSession).where(UserSession.token_hash == token_hash, UserSession.revoked.is_(False),
                                                     UserSession.expires_at >= time.time())).first()
-            return u.to_dict("token_hash", "user_id", "created_at", "expires_at", "user_agent") if u else None
+            return u.to_dict("token_hash", "user_id", "created_at", "expires_at", "user_agent", "auth_method") if u else None
 
     def extend_session(self, token_hash: str, expires_at: float) -> None:
         with self._s() as s:
@@ -400,6 +414,218 @@ class Store:
         with self._s() as s:
             s.execute(delete(OrgJiraConnection).where(OrgJiraConnection.org_id == org_id))
 
+    def set_jira_webhook(self, org_id: str, ciphertext: str) -> bool:
+        """Store (or with "" remove) the org's encrypted Jira webhook secret. False when Jira is not connected."""
+        with self._s() as s:
+            return s.execute(update(OrgJiraConnection).where(OrgJiraConnection.org_id == org_id)
+                             .values(webhook_ciphertext=ciphertext,
+                                     webhook_created_at=now() if ciphertext else None)).rowcount > 0
+
+    # ---- org integrations (GitHub, Confluence, Slack, Teams) ------------------------
+    def set_integration(self, org_id: str, kind: str, *, config: dict[str, Any], ciphertext: str, last4: str,
+                        user_id: str | None) -> None:
+        with self._s() as s:
+            self._upsert(s, OrgIntegration, {"org_id": org_id, "kind": kind, "config": config, "ciphertext": ciphertext,
+                                             "last4": last4, "updated_by": user_id, "updated_at": now()},
+                         ["org_id", "kind"])
+
+    def get_integration(self, org_id: str, kind: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            c = s.get(OrgIntegration, (org_id, kind))
+            return c.to_dict(*INTEGRATION_COLS) if c else None
+
+    def list_integrations(self, org_id: str) -> list[dict[str, Any]]:
+        with self._s() as s:
+            rows = s.scalars(select(OrgIntegration).where(OrgIntegration.org_id == org_id).order_by(OrgIntegration.kind))
+            return [x.to_dict(*INTEGRATION_COLS) for x in rows]
+
+    def delete_integration(self, org_id: str, kind: str) -> None:
+        with self._s() as s:
+            s.execute(delete(OrgIntegration).where(OrgIntegration.org_id == org_id, OrgIntegration.kind == kind))
+
+    # ---- org sign-in rules: OIDC SSO and require-MFA (sso.py) ----------------------
+    def get_auth_settings(self, org_id: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            r = s.get(OrgAuthSettings, org_id)
+            return r.to_dict(*AUTH_SETTINGS_COLS) if r else None
+
+    def set_auth_settings(self, org_id: str, user_id: str | None, **fields: Any) -> dict[str, Any]:
+        """Create or update an org's sign-in rules; only the given fields change."""
+        bad = set(fields) - set(AUTH_SETTINGS_FIELDS)
+        if bad:
+            raise ValueError(f"unknown auth settings: {sorted(bad)}")
+        with self._s() as s:
+            r = s.get(OrgAuthSettings, org_id)
+            if r is None:
+                r = OrgAuthSettings(org_id=org_id, domains=[])
+                s.add(r)
+            for k, v in fields.items():
+                setattr(r, k, v)
+            r.updated_by, r.updated_at = user_id, now()
+        return self.get_auth_settings(org_id)
+
+    def list_sso_settings(self) -> list[dict[str, Any]]:
+        """Every org with single sign-on turned on (to find the org of an email domain)."""
+        with self._s() as s:
+            rows = s.scalars(select(OrgAuthSettings).where(OrgAuthSettings.sso_enabled.is_(True)))
+            return [r.to_dict(*AUTH_SETTINGS_COLS) for r in rows]
+
+    # ---- MFA: TOTP factor and recovery codes (mfa.py) --------------------------------
+    def get_mfa(self, user_id: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            m = s.get(UserMfa, user_id)
+            return m.to_dict() if m else None
+
+    def start_mfa(self, user_id: str, ciphertext: str) -> None:
+        """A new factor, not enabled yet (replaces a pending one, never an enabled one)."""
+        with self._s() as s:
+            m = s.get(UserMfa, user_id)
+            if m is not None and m.enabled:
+                raise ValueError("MFA is already on")
+            if m is not None:
+                s.delete(m)
+                s.flush()
+            s.add(UserMfa(user_id=user_id, ciphertext=ciphertext, enabled=False, recovery_hashes=[], last_step=0,
+                          created_at=now()))
+
+    def enable_mfa(self, user_id: str, recovery_hashes: list[str], step: int) -> None:
+        with self._s() as s:
+            s.execute(update(UserMfa).where(UserMfa.user_id == user_id).values(
+                enabled=True, recovery_hashes=list(recovery_hashes), last_step=step, enabled_at=now()))
+
+    def use_mfa_step(self, user_id: str, step: int) -> bool:
+        """Record a used TOTP time step. False if it (or a later one) was already used: a replayed code."""
+        with self._s() as s:
+            return s.execute(update(UserMfa).where(UserMfa.user_id == user_id, UserMfa.last_step < step)
+                             .values(last_step=step)).rowcount > 0
+
+    def use_recovery_code(self, user_id: str, code_hash: str) -> bool:
+        """Consume one recovery code (single use). False if it is not one of the user's unused codes."""
+        with self._s() as s:
+            row = self._lock_row(s, select(UserMfa).where(UserMfa.user_id == user_id))
+            m = row[0] if row else None
+            if m is None or code_hash not in (m.recovery_hashes or []):
+                return False
+            m.recovery_hashes = [h for h in m.recovery_hashes if h != code_hash]
+            return True
+
+    def set_recovery_codes(self, user_id: str, recovery_hashes: list[str]) -> None:
+        with self._s() as s:
+            s.execute(update(UserMfa).where(UserMfa.user_id == user_id).values(recovery_hashes=list(recovery_hashes)))
+
+    def delete_mfa(self, user_id: str) -> None:
+        with self._s() as s:
+            s.execute(delete(UserMfa).where(UserMfa.user_id == user_id))
+
+    def mfa_enabled(self, user_id: str) -> bool:
+        with self._s() as s:
+            return bool(s.scalar(select(UserMfa.enabled).where(UserMfa.user_id == user_id)))
+
+    # ---- per-project role overrides (project_roles.py) ---------------------------------
+    def get_project_role(self, pid: str, user_id: str) -> str | None:
+        with self._s() as s:
+            r = s.get(ProjectRole, (pid, user_id))
+            return r.role if r else None
+
+    def set_project_role(self, pid: str, user_id: str, role: str, granted_by: str | None) -> None:
+        with self._s() as s:
+            self._upsert(s, ProjectRole, {"project_id": pid, "user_id": user_id, "role": role,
+                                          "granted_by": granted_by, "created_at": now()},
+                         ["project_id", "user_id"], ["role", "granted_by"])
+
+    def delete_project_role(self, pid: str, user_id: str) -> bool:
+        with self._s() as s:
+            return s.execute(delete(ProjectRole).where(ProjectRole.project_id == pid,
+                                                       ProjectRole.user_id == user_id)).rowcount > 0
+
+    def list_project_roles(self, pid: str) -> list[dict[str, Any]]:
+        with self._s() as s:
+            rows = s.scalars(select(ProjectRole).where(ProjectRole.project_id == pid).order_by(ProjectRole.created_at))
+            return [r.to_dict("user_id", "role", "granted_by", "created_at") for r in rows]
+
+    # ---- knowledge base (documents and chunks) ---------------------------------------
+    def add_kb_document(self, pid: str, *, name: str, type: str, origin: str, chars: int, embedding_model: str,
+                        created_by: str, chunks: list[dict[str, Any]]) -> dict[str, Any]:
+        """Store a document and its chunks ({section, page, locator, text, embedding}) in one transaction."""
+        did = f"kb-{secrets.token_hex(6)}"
+        with self._s() as s:
+            s.add(KbDocument(id=did, project_id=pid, name=name, type=type, origin=origin, chars=chars,
+                             chunks=len(chunks), embedding_model=embedding_model, created_by=created_by,
+                             created_at=now()))
+            s.flush()
+            for i, c in enumerate(chunks):
+                s.add(KbChunk(document_id=did, project_id=pid, ord=i, section=c.get("section") or "",
+                              page=c.get("page"), locator=c.get("locator") or "", text=c["text"],
+                              embedding=c.get("embedding")))
+            s.flush()
+            return s.get(KbDocument, did).to_dict(*KB_DOCUMENT_COLS)
+
+    def list_kb_documents(self, pid: str) -> list[dict[str, Any]]:
+        with self._s() as s:
+            rows = s.scalars(select(KbDocument).where(KbDocument.project_id == pid)
+                             .order_by(KbDocument.created_at.desc(), KbDocument.id))
+            return [x.to_dict(*KB_DOCUMENT_COLS) for x in rows]
+
+    def get_kb_document(self, pid: str, did: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            d = s.get(KbDocument, did)
+            return d.to_dict(*KB_DOCUMENT_COLS) if d and d.project_id == pid else None
+
+    def delete_kb_document(self, pid: str, did: str) -> bool:
+        with self._s() as s:
+            s.execute(delete(KbChunk).where(KbChunk.document_id == did, KbChunk.project_id == pid))
+            return bool(s.execute(delete(KbDocument).where(KbDocument.id == did, KbDocument.project_id == pid)).rowcount)
+
+    def list_kb_chunks(self, pid: str, document_id: str | None = None) -> list[dict[str, Any]]:
+        """Every chunk of the project (or one document), with its document's name and type."""
+        with self._s() as s:
+            q = (select(KbChunk, KbDocument.name, KbDocument.type).join(KbDocument, KbDocument.id == KbChunk.document_id)
+                 .where(KbChunk.project_id == pid))
+            if document_id:
+                q = q.where(KbChunk.document_id == document_id)
+            rows = s.execute(q.order_by(KbChunk.document_id, KbChunk.ord))
+            return [{**c.to_dict(*KB_CHUNK_COLS), "document": name, "type": typ} for c, name, typ in rows]
+
+    def set_kb_embeddings(self, did: str, model: str, vectors: dict[int, list[float]]) -> None:
+        """Replace a document's embeddings ({chunk id: vector}) and record the model that made them."""
+        with self._s() as s:
+            for cid, vec in vectors.items():
+                s.execute(update(KbChunk).where(KbChunk.id == cid, KbChunk.document_id == did).values(embedding=vec))
+            s.execute(update(KbDocument).where(KbDocument.id == did).values(embedding_model=model))
+
+    # ---- compliance frameworks (settings and evidence per control) -----------------
+    def get_compliance_settings(self, pid: str) -> dict[str, Any] | None:
+        with self._s() as s:
+            c = s.get(ComplianceSettings, pid)
+            return c.to_dict("frameworks", "updated_by", "updated_at") if c else None
+
+    def set_compliance_settings(self, pid: str, frameworks: list[str], user: str | None) -> dict[str, Any]:
+        with self._s() as s:
+            self._upsert(s, ComplianceSettings, {"project_id": pid, "frameworks": list(frameworks), "updated_by": user,
+                                                 "updated_at": now()}, ["project_id"])
+        return self.get_compliance_settings(pid)
+
+    def list_compliance_evidence(self, pid: str) -> list[dict[str, Any]]:
+        with self._s() as s:
+            rows = s.scalars(select(ComplianceEvidence).where(ComplianceEvidence.project_id == pid)
+                             .order_by(ComplianceEvidence.framework, ComplianceEvidence.control_id))
+            return [x.to_dict(*COMPLIANCE_EVIDENCE_COLS) for x in rows]
+
+    def set_compliance_evidence(self, pid: str, framework: str, control_id: str, *, status: str, note: str,
+                                user: str | None) -> dict[str, Any]:
+        with self._s() as s:
+            self._upsert(s, ComplianceEvidence, {"project_id": pid, "framework": framework, "control_id": control_id,
+                                                 "status": status, "note": note, "updated_by": user, "updated_at": now()},
+                         ["project_id", "framework", "control_id"])
+            row = s.get(ComplianceEvidence, (pid, framework, control_id))
+            return row.to_dict(*COMPLIANCE_EVIDENCE_COLS)
+
+    def delete_compliance_evidence(self, pid: str, framework: str, control_id: str) -> bool:
+        with self._s() as s:
+            return s.execute(delete(ComplianceEvidence).where(
+                ComplianceEvidence.project_id == pid, ComplianceEvidence.framework == framework,
+                ComplianceEvidence.control_id == control_id)).rowcount > 0
+
     # ---- links to external trackers (Jira issues) ---------------------------------
     def list_external_links(self, pid: str, system: str = "jira") -> list[dict[str, Any]]:
         with self._s() as s:
@@ -423,6 +649,21 @@ class Store:
             s.execute(update(ExternalLink).where(ExternalLink.project_id == pid, ExternalLink.system == system,
                                                  ExternalLink.external_key == external_key)
                       .values(status=status, status_category=category, status_checked_at=now()))
+
+    def find_external_links_by_key(self, org_id: str, external_key: str, system: str = "jira") -> list[dict[str, Any]]:
+        """Every object linked to this issue key in the org's projects (a webhook names the issue, not the project)."""
+        with self._s() as s:
+            rows = s.execute(select(ExternalLink.project_id, ExternalLink.object_kind, ExternalLink.object_id)
+                             .join(Project, Project.id == ExternalLink.project_id)
+                             .where(Project.org_id == org_id, ExternalLink.system == system,
+                                    ExternalLink.external_key == external_key)
+                             .order_by(ExternalLink.project_id, ExternalLink.object_kind, ExternalLink.object_id))
+            return [{"project_id": p, "object_kind": k, "object_id": o} for p, k, o in rows]
+
+    def delete_external_links_by_key(self, pid: str, external_key: str, system: str = "jira") -> int:
+        with self._s() as s:
+            return s.execute(delete(ExternalLink).where(ExternalLink.project_id == pid, ExternalLink.system == system,
+                                                        ExternalLink.external_key == external_key)).rowcount
 
     def delete_external_link(self, pid: str, object_kind: str, object_id: str, system: str = "jira") -> None:
         with self._s() as s:

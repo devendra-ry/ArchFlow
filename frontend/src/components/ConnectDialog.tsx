@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
+import { Select } from "./Select";
 import type { ApiToken } from "../types";
 
 interface Props { orgId: string; orgName?: string; canManage: boolean; onClose: () => void }
@@ -123,13 +124,10 @@ export function ConnectDialog({ orgId, orgName, canManage, onClose }: Props) {
         )}
         <form className="row gap" onSubmit={create}>
           <input className="grow" placeholder="Token name, e.g. CI pipeline" value={name} onChange={(e) => setName(e.target.value)} aria-label="Token name" />
-          <select value={access} onChange={(e) => setAccess(e.target.value as "read" | "write")} aria-label="Access">
-            <option value="write">Read & edit</option>
-            <option value="read">Read only</option>
-          </select>
-          <select value={expiry} onChange={(e) => setExpiry(e.target.value)} aria-label="Expiry">
-            <option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option><option value="">No expiry</option>
-          </select>
+          <Select value={access} onChange={setAccess} aria-label="Access"
+            options={[{ value: "write", label: "Read & edit" }, { value: "read", label: "Read only" }]} />
+          <Select value={expiry} onChange={setExpiry} aria-label="Expiry"
+            options={[{ value: "30", label: "30 days" }, { value: "90", label: "90 days" }, { value: "365", label: "1 year" }, { value: "", label: "No expiry" }]} />
           <button className="primary" disabled={!name.trim()}>Create token</button>
         </form>
         <TokenTable rows={pats} empty="No tokens yet." onRevoke={revoke} kind="pat" />

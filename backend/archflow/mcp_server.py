@@ -184,6 +184,57 @@ def generate_coding_prompt(project_id: str, component_ids: list[str] | None = No
                 json={"node_ids": component_ids or [], "requirement_ids": requirement_ids or [], "target": target})["prompt"]
 
 
+@mcp.tool()
+def jira_push_preview(project_id: str, branch: str = "main", project_key: str = "", ai: bool = True) -> dict[str, Any]:
+    """Dry run of pushing a branch to Jira: what would be created, updated or left unchanged. Sends nothing."""
+    return _req("POST", f"/api/projects/{project_id}/jira/plan", params={"branch": branch},
+                json={"project_key": project_key or None, "ai": ai})
+
+
+@mcp.tool()
+def jira_push(project_id: str, confirm: bool = False, branch: str = "main", project_key: str = "",
+              ai: bool = True) -> dict[str, Any]:
+    """Push a branch to Jira. Call jira_push_preview first and pass confirm=true."""
+    return _req("POST", f"/api/projects/{project_id}/jira/push", params={"branch": branch},
+                json={"project_key": project_key or None, "ai": ai, "confirm": confirm})
+
+
+@mcp.tool()
+def jira_sync_status(project_id: str, branch: str = "main") -> dict[str, Any]:
+    """Pull the current Jira status of every linked issue now."""
+    return _req("POST", f"/api/projects/{project_id}/jira/refresh", params={"branch": branch})
+
+
+@mcp.tool()
+def jira_list_unlinked_issues(project_id: str, page_token: str = "", limit: int = 25, query: str = "",
+                              project_key: str = "") -> dict[str, Any]:
+    """Jira issues this project does not link to yet, with the requirement each would become."""
+    params: dict[str, Any] = {"limit": limit, "q": query}
+    if page_token:
+        params["page_token"] = page_token
+    if project_key:
+        params["project_key"] = project_key
+    return _req("GET", f"/api/projects/{project_id}/jira/issues", params=params)
+
+
+@mcp.tool()
+def jira_import_issues(project_id: str, keys: list[str], branch: str = "main", ai: bool = True) -> dict[str, Any]:
+    """Import Jira issues (e.g. SHOP-12) as requirements; already-linked issues are skipped."""
+    out = _req("POST", f"/api/projects/{project_id}/jira/import", params={"branch": branch},
+               json={"keys": keys, "ai": ai})
+    out.pop("links", None)
+    return out
+
+
+@mcp.tool()
+def generate_artifacts(project_id: str, kind: str, target: str, branch: str = "main", use_ai: bool = False,
+                       cloud: str = "") -> dict[str, Any]:
+    """Generate files from the design: iac (terraform, compose, k8s), tests (gherkin, pytest, playwright) or docs
+    (srs, brd, runbook). Returns {files: [{path, content}], engine, notes, checks}."""
+    return _req("POST", f"/api/projects/{project_id}/generate", params={"branch": branch},
+                json={"kind": kind, "target": target, "ai": use_ai, "cloud": cloud})
+
+
 def main() -> None:
     mcp.run()
 

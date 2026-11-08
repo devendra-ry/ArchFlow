@@ -12,7 +12,7 @@ Layout (only ``adapter.py`` imports Graphify; everything else works on ArchFlow'
 * ``cli.py``       — ``archflow-codegraph <folder> [-o out.json]``: analyse locally and upload only the graph.
 * ``normalize.py`` — validation of normalized graphs (also uploaded ones), summaries, (de)compression.
 * ``sources.py``   — public Git URL validation (SSRF guard), shallow clone with time and size limits; local dirs.
-* ``jobs.py``      — background job runner with an in-memory registry (seam for a real queue).
+* ``jobs.py``      — background job runner; status in scale.job_store() (in-memory, or Redis when configured).
 * ``reconstruct.py`` / ``drift.py`` / ``impact.py`` — proposed HLD, designed-vs-code drift, change impact.
 * ``service.py``   — REST routes and the functions shared with the MCP tools.
 

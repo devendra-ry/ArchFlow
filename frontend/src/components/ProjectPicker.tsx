@@ -3,8 +3,11 @@ import { api } from "../api";
 import { getRecent, pruneRecent, timeAgo } from "../recent";
 import { can, type AISettings, type Me, type Project, type User } from "../types";
 import { AISettingsDialog, AIUsageDialog, JiraSettingsDialog, MembersDialog } from "./OrgDialogs";
+import { IntegrationsDialog } from "./IntegrationsDialog";
+import { SignInSettingsDialog } from "./SecurityDialogs";
 import { TracesDialog } from "./TracesDialog";
 import { UserMenu } from "./UserMenu";
+import { Select } from "./Select";
 
 interface Props {
   me: Me;
@@ -48,7 +51,7 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
     return orgs.some((o) => o.id === saved) ? saved : orgs[0]?.id ?? "";
   });
   const [newOrg, setNewOrg] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<"members" | "ai" | "usage" | "traces" | "jira" | null>(null);
+  const [dialog, setDialog] = useState<"members" | "ai" | "usage" | "traces" | "jira" | "integrations" | "signin" | null>(null);
   const org = orgs.find((o) => o.id === orgId);
   const role = org?.role;
   const isAdmin = can(role, "admin");
@@ -133,9 +136,8 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
       <header className="home-bar">
         <div className="home-brand"><span className="logo">▲</span> ArchFlow</div>
         {orgs.length > 0 && (
-          <select className="home-org" value={orgId} onChange={(e) => setOrgId(e.target.value)} aria-label="Organization">
-            {orgs.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-          </select>
+          <Select className="home-org" value={orgId} onChange={setOrgId} aria-label="Organization"
+            options={orgs.map((o) => ({ value: o.id, label: o.name }))} />
         )}
         <input ref={searchRef} className="home-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
           placeholder="Search all projects…   /" aria-label="Search projects" />
@@ -192,9 +194,8 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
             <div className="row between">
               <h2>{q ? `Results for “${query}”` : org ? `Projects in ${org.name}` : "Projects"}
                 <span className="count">{shown.length}</span></h2>
-              <select value={sort} onChange={(e) => setSort(e.target.value as typeof sort)} aria-label="Sort projects" className="home-sort">
-                <option value="recent">Recently opened</option><option value="name">Name</option><option value="created">Newest</option>
-              </select>
+              <Select size="sm" value={sort} onChange={setSort} aria-label="Sort projects" className="home-sort"
+                options={[{ value: "recent", label: "Recently opened" }, { value: "name", label: "Name" }, { value: "created", label: "Newest" }]} />
             </div>
             {org && !can(role, "edit") && !q && <p className="muted small">You have {role} access in {org.name}: you can open and review projects, not change them.</p>}
             {projects === null && !q && <p className="muted small">Loading…</p>}
@@ -237,6 +238,8 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
               <div className="side-actions">
                 <button className="small" onClick={() => setDialog("members")}>{isAdmin ? "Members & invites" : "Members"}</button>
                 {isAdmin && <button className="small" onClick={() => setDialog("jira")} title="Connect Jira Cloud to push requirements as epics and stories">Jira</button>}
+                {isAdmin && <button className="small" onClick={() => setDialog("integrations")} title="Connect GitHub, Confluence, Slack and Microsoft Teams">Integrations</button>}
+                {isAdmin && <button className="small" onClick={() => setDialog("signin")} title="Single sign-on and two-step sign-in rules">Sign-in & security</button>}
                 {newOrg === null ? (
                   <button className="small ghost" onClick={() => setNewOrg("")}>+ New organization</button>
                 ) : (
@@ -282,6 +285,12 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
       )}
       {dialog === "traces" && org && (
         <TracesDialog orgId={org.id} orgName={org.name} onClose={() => setDialog(null)} />
+      )}
+      {dialog === "signin" && org && role && (
+        <SignInSettingsDialog orgId={org.id} orgName={org.name} role={role} onClose={() => { setDialog(null); onMeChanged(); }} />
+      )}
+      {dialog === "integrations" && org && (
+        <IntegrationsDialog orgId={org.id} orgName={org.name} onClose={() => setDialog(null)} />
       )}
       {dialog === "jira" && org && role && (
         <JiraSettingsDialog orgId={org.id} orgName={org.name} role={role} selfId={me.user.id} onClose={() => setDialog(null)} />

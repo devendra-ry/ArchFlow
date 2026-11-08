@@ -13,6 +13,7 @@ import { touchRecent } from "../recent";
 import { buildSuggestions } from "../suggestions";
 import { asSuggestions, useAiSuggestions } from "../aiSuggestions";
 import { useRealtime } from "../realtime";
+import { COMPACT_QUERY, useMedia } from "../useMedia";
 import type {
   Activity, Analysis, ArchNode, Branch, Catalog, CatalogItem, Diff, Issue, Me, MemoryItem, Op, Project, Role, User, Version,
 } from "../types";
@@ -24,10 +25,16 @@ import { AISettingsDialog } from "./OrgDialogs";
 import { CommandBar, type ChatDock, type ChatMode } from "./CommandBar";
 import { CommentsPanel } from "./CommentsPanel";
 import { NotificationBell } from "./NotificationBell";
-import type { AppNotification, Comment, JiraLinks, Member } from "../types";
+import type { AppNotification, Comment, ExternalLinks, JiraLink, JiraLinks, Member } from "../types";
 import { JiraDialog } from "./JiraDialog";
+import { KnowledgeDialog } from "./KnowledgeDialog";
+import { CostDialog } from "./CostDialog";
+import { ComplianceDialog } from "./ComplianceDialog";
+import { ConfluenceDialog, GitHubDialog } from "./IntegrationsDialog";
 import { ConnectDialog } from "./ConnectDialog";
+import { ProjectAccessDialog } from "./SecurityDialogs";
 import { ExportDialog } from "./ExportDialog";
+import { GenerateDialog } from "./GenerateDialog";
 import { DiagramsDialog } from "./DiagramsDialog";
 import { DecisionsPanel } from "./DecisionsPanel";
 import { DesignChat } from "./DesignChat";
@@ -40,6 +47,7 @@ import { MemoryDialog } from "./MemoryDialog";
 import { MergeDialog } from "./MergeDialog";
 import { DRAG_MIME, Palette } from "./Palette";
 import { RequirementsPanel } from "./RequirementsPanel";
+import { Select, onMenuKeyDown } from "./Select";
 import { VersionsPanel } from "./VersionsPanel";
 
 interface Props {
@@ -70,6 +78,12 @@ const DOCK_KEY = "archflow.chatDock";
 /** A comment thread to open once a workspace loads (set when a notification leads to another project). */
 const OPEN_THREAD_KEY = "archflow.openThread";
 const rand = () => Math.random().toString(36).slice(2, 6);
+/** A small stroked icon for the canvas action bar (text glyphs render as colour emoji on some phones). */
+function FabIcon({ d }: { d: string }) {
+  return <svg className="fab-icon" viewBox="0 0 16 16" aria-hidden><path d={d} /></svg>;
+}
+/** Arrowheads follow the edge colour token, so they read in light and dark themes. */
+const EDGE_MARKER = { type: MarkerType.ArrowClosed, color: "var(--edge-stroke)", width: 18, height: 18 };
 
 export function Workspace(props: Props) {
   return (
@@ -111,6 +125,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const [focusThread, setFocusThread] = useState<string | null>(null);
   const [notifKey, setNotifKey] = useState(0);
   const [memoryOpen, setMemoryOpen] = useState(false);
+  const [accessOpen, setAccessOpen] = useState(false);
   // Latest server event about a conversation, for the design chat (the assistant hook gets it directly).
   const [designRemote, setDesignRemote] = useState<{ id: string; at: number } | null>(null);
   const [toasts, setToasts] = useState<{ id: number; text: string }[]>([]);
@@ -138,8 +153,33 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const [exportOpen, setExportOpen] = useState(false);
   const [aiSettingsOpen, setAiSettingsOpen] = useState(false);
   const [jiraOpen, setJiraOpen] = useState(false);
+  const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+  const [kbVersion, setKbVersion] = useState(0);
+  const [costsOpen, setCostsOpen] = useState(false);
+  // null = never opened; false = closed but kept mounted (so "Show on canvas" and reopening keep the view)
+  const [complianceOpen, setComplianceOpen] = useState<boolean | null>(null);
+  const [generateOpen, setGenerateOpen] = useState(false);
+  const [githubOpen, setGithubOpen] = useState(false);
+  const [confluenceOpen, setConfluenceOpen] = useState(false);
+  const [github, setGithub] = useState<ExternalLinks | null>(null);
+  const [confluence, setConfluence] = useState<ExternalLinks | null>(null);
   const [jira, setJira] = useState<JiraLinks | null>(null);
   const toolsRef = useRef<HTMLDivElement>(null);
+  // Narrow screens: the side panels slide over the canvas as drawers, and the palette opens as a sheet.
+  const compact = useMedia(COMPACT_QUERY);
+  const compactRef = useRef(compact);
+  compactRef.current = compact;
+  const [drawer, setDrawer] = useState<"left" | "right" | null>(null);
+  useEffect(() => { if (!compact) setDrawer(null); }, [compact]);
+  const [paletteOpen, setPaletteOpenState] = useState<boolean | null>(() => {
+    try { const v = localStorage.getItem("archflow.palette"); return v ? v === "open" : null; } catch { return null; }
+  });
+  const [paletteSheet, setPaletteSheet] = useState(false);
+  const setPaletteOpen = (open: boolean) => {
+    if (compactRef.current) { setPaletteSheet(open); return; }
+    setPaletteOpenState(open);
+    try { localStorage.setItem("archflow.palette", open ? "open" : "closed"); } catch { /* storage unavailable */ }
+  };
   useEffect(() => {
     if (!toolsOpen) return;
     const close = (e: MouseEvent | KeyboardEvent) => {
@@ -219,6 +259,11 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   // The canvas model is a live Yjs document shared with everyone on this branch (and with AI/MCP edits).
   const live = useCollab(pid, branch, user);
   const state = live.state;
+  // With no saved palette choice, the palette starts open on an empty canvas and closed otherwise.
+  const loaded = !!state;
+  useEffect(() => {
+    if (loaded && paletteOpen === null) setPaletteOpenState(Object.keys(stateRef.current?.nodes ?? {}).length === 0);
+  }, [loaded]); // eslint-disable-line react-hooks/exhaustive-deps
   const stateRef = useRef(state);
   stateRef.current = state;
 
@@ -286,6 +331,20 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const loadJira = useCallback(() => { api.jiraLinks(pid).then(setJira).catch(() => setJira(null)); }, [pid]);
   useEffect(loadJira, [loadJira]);
   const jiraByReq = Object.fromEntries((jira?.links ?? []).filter((l) => l.object_kind === "requirement").map((l) => [l.object_id, l]));
+  // On the canvas: a component's epic, or the first sub-task made from a low-level element.
+  const jiraByNode = useMemo(() => {
+    const m: Record<string, JiraLink> = {};
+    for (const l of jira?.links ?? []) {
+      if (l.object_kind === "epic") m[l.object_id] = l;
+      else if (l.object_kind === "subtask") { const nid = l.object_id.split(":").slice(1).join(":"); if (nid && !m[nid]) m[nid] = l; }
+    }
+    return m;
+  }, [jira]);
+  // GitHub issues and the Confluence page published for this project (shown when the org connected them).
+  const loadGithub = useCallback(() => { api.githubLinks(pid).then(setGithub).catch(() => setGithub(null)); }, [pid]);
+  useEffect(loadGithub, [loadGithub]);
+  useEffect(() => { api.confluenceLinks(pid).then(setConfluence).catch(() => setConfluence(null)); }, [pid]);
+  const githubByReq = Object.fromEntries((github?.links ?? []).map((l) => [l.object_id, l]));
   // People you can @mention: refreshed when comments open and when someone new comes online (they may have just joined).
   const peerNames = live.peers.map((p) => p.name).sort().join("|");
   useEffect(() => {
@@ -323,6 +382,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
     onVersions: refreshMeta,
     onConversation: (id) => { assistant.onRemote(id); setDesignRemote({ id, at: Date.now() }); },
     onComments: () => { loadComments(); setNotifKey((k) => k + 1); },
+    onJira: () => loadJira(),
     onMemory: (_actor, added) => {
       loadMemory();
       if (added.length) toast(`✦ Remembered: ${added.join(" · ")}`);
@@ -444,9 +504,11 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           data: {
             model: m, dimmed: !!highlight && !highlight.has(m.id), highlighted: !!highlight?.has(m.id),
             diff: mark(m.id, d?.nodes), remote: remoteByNode[m.id], issues: issuesByNode[m.id],
-            childCount: childCount[m.id], stale: staleByNode[m.id],
+            childCount: childCount[m.id], stale: staleByNode[m.id], jira: jiraByNode[m.id],
             requirementIds: m.requirement_ids.filter((r) => !state.requirements[r]?.deleted),
             comments: commentsByNode[m.id]?.length, onComments: commentsByNode[m.id] ? () => openThread(commentsByNode[m.id].at(-1)!) : undefined,
+            onOpenInternals: m.type === "note" ? undefined : () => openLevel(m.id),
+            onRemove: readOnly ? undefined : () => { flow.deleteElements({ nodes: [{ id: m.id }] }); },
           },
         };
       });
@@ -468,8 +530,9 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         return {
           id: e.id, source: e.source, target: e.target, label: e.protocol || e.label || undefined,
           type: "smoothstep", pathOptions: { borderRadius: 14, offset: 18 },
-          labelBgPadding: [5, 2] as [number, number], labelBgBorderRadius: 4,
-          selected: prevSel.get(e.id) ?? false, markerEnd: { type: MarkerType.ArrowClosed },
+          labelBgPadding: [7, 3] as [number, number], labelBgBorderRadius: 999,
+          selected: prevSel.get(e.id) ?? false, markerEnd: EDGE_MARKER,
+          interactionWidth: 24,
           className: ["arch-edge", dm && `diff-${dm}`, dim && "dimmed"].filter(Boolean).join(" "),
         };
       });
@@ -480,12 +543,12 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           const src = state.nodes[e.source] ? e.source : `ghost:${e.source}`;
           const tgt = state.nodes[e.target] ? e.target : `ghost:${e.target}`;
           out.push({ id: `ghost:${e.id}`, source: src, target: tgt, label: e.protocol || undefined, selectable: false,
-            className: "diff-removed", markerEnd: { type: MarkerType.ArrowClosed } });
+            className: "diff-removed", markerEnd: { type: MarkerType.ArrowClosed, color: "var(--removed)", width: 18, height: 18 } });
         }
       }
       return out;
     });
-  }, [state, diff, highlight, remoteByNode, issuesByNode, level, levelOf, childCount, commentsByNode, openThread, staleByNode]);
+  }, [state, diff, highlight, remoteByNode, issuesByNode, level, levelOf, childCount, commentsByNode, openThread, staleByNode, readOnly, openLevel, flow, jiraByNode]);
 
 
   const selectedNodeIds = useMemo(() => nodes.filter((n) => n.selected && !n.id.startsWith("ghost:")).map((n) => n.id), [nodes]);
@@ -515,14 +578,11 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
     if (c.source && c.target && c.source !== c.target) send([{ op: "add_edge", edge: { source: c.source, target: c.target } }]);
   }, [send]);
 
-  const onDrop = useCallback((e: React.DragEvent) => {
+  /** Add a catalog item at a point on screen (where it was dropped, or the middle of the canvas when tapped). */
+  const addFromCatalog = useCallback((item: CatalogItem, at: { x: number; y: number }) => {
     if (readOnly) return;
-    const raw = e.dataTransfer.getData(DRAG_MIME);
-    if (!raw) return;
-    e.preventDefault();
-    const item = JSON.parse(raw) as CatalogItem;
     const type = item.type;
-    const p = flow.screenToFlowPosition({ x: e.clientX, y: e.clientY });
+    const p = flow.screenToFlowPosition(at);
     const generic = item.vendor === "generic";
     send([{ op: "add_node", node: {
       name: type === "note" ? "Note" : generic ? `New ${TYPE_META[type].label}` : item.name, type,
@@ -534,6 +594,20 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       ...(type === "table" ? { name: "new_table", props: { columns: "id uuid pk, created_at timestamptz" } } : {}),
     } }]);
   }, [flow, send, level, readOnly]);
+  const onDrop = useCallback((e: React.DragEvent) => {
+    if (readOnly) return;
+    const raw = e.dataTransfer.getData(DRAG_MIME);
+    if (!raw) return;
+    e.preventDefault();
+    addFromCatalog(JSON.parse(raw) as CatalogItem, { x: e.clientX, y: e.clientY });
+  }, [addFromCatalog, readOnly]);
+  const addAtCenter = useCallback((item: CatalogItem) => {
+    const r = wrapper.current?.getBoundingClientRect();
+    if (!r) return;
+    const spread = () => (Math.random() - 0.5) * 60; // repeated taps do not stack exactly
+    addFromCatalog(item, { x: r.left + r.width / 2 + spread(), y: r.top + r.height / 2.4 + spread() });
+    if (compactRef.current) setPaletteSheet(false);
+  }, [addFromCatalog]);
 
   const lastCursor = useRef(0);
   const onMouseMove = useCallback((e: React.MouseEvent) => {
@@ -596,6 +670,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const fixWithAI = (instruction: string) => {
     setChatMode("command");
     if (dock === "left") setTab("chat"); else if (dock === "right") setRightTab("chat");
+    if (compactRef.current && dock !== "float") setDrawer(dock);
     setPrefill({ text: instruction, at: Date.now() });
   };
 
@@ -643,6 +718,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
     const first = stateRef.current?.nodes[nodeIds[0]];
     if (first && levelOf(first) !== level) setLevel(levelOf(first));
     const ids = new Set(nodeIds);
+    if (compactRef.current) setDrawer(null); // show the canvas
     setNodes((ns) => ns.map((n) => ({ ...n, selected: ids.has(n.id) })));
     flow.fitView({ nodes: nodeIds.map((id) => ({ id })), padding: 0.6, duration: 400, maxZoom: 1.2 });
   };
@@ -720,6 +796,42 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       ) : undefined} />
   );
 
+  const problems = analysis ? analysis.health.issues.errors + analysis.health.issues.warnings : 0;
+  const healthText = problems === 0 ? "✓ No issues" : `${problems} issue${problems === 1 ? "" : "s"}`;
+  const aiAdmin = can(role ?? undefined, "admin") && !!project?.org_id;
+  const aiTip = ai?.available ? `AI model: ${ai.model}` : aiAdmin
+    ? "No AI model configured for this organization: click to add a provider key and choose models."
+    : "No AI model configured: the design chat and commands use built-in templates. Ask an organization admin to set up AI.";
+  /** Show a side panel: on narrow screens this also slides its drawer in. */
+  const openPanel = (t: Tab) => {
+    setTab(t);
+    if (compact) setDrawer("left");
+  };
+  const convertTo = async (target: string) => {
+    setToolsOpen(false);
+    setConverting(true);
+    try {
+      const r = await api.convert(pid, branch, target, user.name);
+      toast(r.changed ? `Converted ${r.changed} component(s) to ${catalog?.vendors[target] ?? target}` : "Nothing to convert");
+      if (r.skipped.length) toast(`No equivalent for: ${r.skipped.join(", ")}`);
+    } catch (err) { toast(`⚠ ${(err as Error).message}`); }
+    finally { setConverting(false); }
+  };
+  const exportAs = async (kind: "png" | "svg" | "html") => {
+    setToolsOpen(false);
+    setExporting(true);
+    const name = exportName(project?.name ?? "diagram", branch, level ? state?.nodes[level]?.name ?? level : "");
+    try {
+      if (kind === "html") toast(`Saved ${await api.exportDiagram(pid, branch, level)}`);
+      else {
+        await exportCanvasImage(nodes.filter((n) => !n.id.startsWith("ghost:")), kind, name);
+        toast(`Saved ${name}.${kind}`);
+      }
+    } catch (err) { toast(`⚠ ${(err as Error).message}`); }
+    finally { setExporting(false); }
+  };
+  const selectionCount = selectedNodeIds.length + selectedEdgeIds.length;
+
   return (
     <div className={`workspace ${canvasFull ? "canvas-full" : ""}`}>
       <header className="topbar">
@@ -731,9 +843,9 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           onOpen={onOpenProject} onHome={onExit} />
         {readOnly && <span className="ro-badge" title={can(role, "review") ? "Your role can view and comment, but not edit" : "Your role can view, but not edit or comment"}>Read only · {role}</span>}
         <div className="branch">
-          <select value={branch} onChange={(e) => onBranch(e.target.value)} aria-label="Branch">
-            {branches.map((b) => <option key={b.name} value={b.name}>⎇ {b.name}</option>)}
-          </select>
+          <Select value={branch} onChange={onBranch} aria-label="Branch" className="branch-select" menuWidth={240}
+            options={(branches.some((b) => b.name === branch) ? branches : [...branches, { name: branch, base_version: null, created_at: "" }])
+              .map((b) => ({ value: b.name, label: b.name, icon: "⎇", hint: b.name === "main" ? "Main line" : b.base_version != null ? `From v${b.base_version}` : undefined }))} />
           {branch !== "main" && branches.some((b) => b.name === "main") && (
             <button className="small ghost" onClick={() => onBranch("main")} title="Switch back to the main branch">↩ main</button>
           )}
@@ -754,95 +866,116 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         <div className="spacer" />
         <div className="tb-group tb-right">
         {analysis && (
-          <button className="health-pill" onClick={() => setTab("issues")}
+          <button className="health-pill" onClick={() => openPanel("issues")}
             title={`Architecture health: ${analysis.health.issues.errors} error(s), ${analysis.health.issues.warnings} warning(s). `
               + `${analysis.health.traceability}% of requirements are linked to a component. Click for details.`}>
             {analysis.health.issues.errors > 0 && <span className="dot error" />}
             {analysis.health.issues.warnings > 0 && <span className="dot warning" />}
-            {analysis.health.issues.errors + analysis.health.issues.warnings === 0
-              ? "✓ No issues"
-              : `${analysis.health.issues.errors + analysis.health.issues.warnings} issue${analysis.health.issues.errors + analysis.health.issues.warnings === 1 ? "" : "s"}`}
-            {" · "}{analysis.health.traceability}% traced
+            {healthText}
+            <span className="health-traced">{" · "}{analysis.health.traceability}% traced</span>
           </button>
         )}
         {ai && (() => {
-          const admin = can(role ?? undefined, "admin") && !!project?.org_id;
-          const tip = ai.available ? `AI model: ${ai.model}` : admin
-            ? "No AI model configured for this organization: click to add a provider key and choose models."
-            : "No AI model configured: the design chat and commands use built-in templates. Ask an organization admin to set up AI.";
-          return admin
-            ? <button className={`ai-pill ${ai.available ? "on" : "off"}`} title={tip} onClick={() => setAiSettingsOpen(true)}>{ai.available ? "AI on" : "AI off · set up"}</button>
-            : <span className={`ai-pill ${ai.available ? "on" : "off"}`} title={tip}>{ai.available ? "AI on" : "AI off · templates"}</span>;
+          return aiAdmin
+            ? <button className={`ai-pill ${ai.available ? "on" : "off"}`} title={aiTip} onClick={() => setAiSettingsOpen(true)}>{ai.available ? "AI on" : "AI off · set up"}</button>
+            : <span className={`ai-pill ${ai.available ? "on" : "off"}`} title={aiTip}>{ai.available ? "AI on" : "AI off · templates"}</span>;
         })()}
         <div className="tools-menu" ref={toolsRef}>
-          <button className="small" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={() => setToolsOpen((v) => !v)}>Tools ▾</button>
+          <button className="small tools-btn" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={() => setToolsOpen((v) => !v)}
+            title="Tools, export and more">Tools ▾</button>
           {toolsOpen && (
-            <div className="tools-pop" role="menu">
+            <div className="tools-pop af-menu" role="menu" aria-label="Tools" onKeyDown={onMenuKeyDown}>
+              <div className="af-menu-title">Tools</div>
+              {analysis && (
+                <button role="menuitem" className="tb-overflow" onClick={() => { setToolsOpen(false); openPanel("issues"); }}>
+                  <span className="mi-icon" aria-hidden>♥</span>
+                  <span className="mi-text"><b>Health: {healthText}</b><span className="muted tiny">{analysis.health.traceability}% of requirements traced</span></span></button>
+              )}
+              <button role="menuitem" className="tb-overflow" onClick={() => { setToolsOpen(false); setPromptFor({ nodeIds: selectedNodeIds, requirementIds: [] }); }}>
+                <span className="mi-icon" aria-hidden>⚙</span>
+                <span className="mi-text"><b>Vibe code{selectedNodeIds.length ? ` (${selectedNodeIds.length})` : ""}</b><span className="muted tiny">Hand this design to a coding agent</span></span></button>
+              {ai && (
+                <button role="menuitem" className="tb-overflow tb-overflow-ai" disabled={!aiAdmin} onClick={() => { setToolsOpen(false); setAiSettingsOpen(true); }}>
+                  <span className={`mi-icon ${ai.available ? "ok" : "warn"}`} aria-hidden>✦</span>
+                  <span className="mi-text"><b>{ai.available ? "AI on" : aiAdmin ? "AI off · set up" : "AI off · templates"}</b><span className="muted tiny">{aiTip}</span></span></button>
+              )}
+              <div className="tools-sep tb-overflow" />
               <button role="menuitem" onClick={() => { setToolsOpen(false); setCodeOpen(true); }}>
-                <b>⟨/⟩ Code analysis</b><span className="muted tiny">Reconstruct a repository, check drift and change impact</span></button>
+                <span className="mi-icon" aria-hidden>⟨/⟩</span>
+                <span className="mi-text"><b>Code analysis</b><span className="muted tiny">Reconstruct a repository, check drift and change impact</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setDiagramsOpen(true); }}>
-                <b>◫ Diagrams</b><span className="muted tiny">C4, sequence, ER, deployment and data flow as Mermaid / PlantUML</span></button>
+                <span className="mi-icon" aria-hidden>◫</span>
+                <span className="mi-text"><b>Diagrams</b><span className="muted tiny">C4, sequence, ER, deployment and data flow as Mermaid / PlantUML</span></span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setKnowledgeOpen(true); }}>
+                <span className="mi-icon" aria-hidden>❖</span>
+                <span className="mi-text"><b>Knowledge base</b><span className="muted tiny">Ask and search the project documents and meetings, with citations</span></span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setCostsOpen(true); }}>
+                <span className="mi-icon" aria-hidden>$</span>
+                <span className="mi-text"><b>Cost estimate</b><span className="muted tiny">Monthly cost of this architecture, line by line, and ways to save</span></span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setComplianceOpen(true); }}>
+                <span className="mi-icon" aria-hidden>✓</span>
+                <span className="mi-text"><b>Compliance</b><span className="muted tiny">SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001 checks on this design</span></span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setGenerateOpen(true); }}>
+                <span className="mi-icon" aria-hidden>⚙</span>
+                <span className="mi-text"><b>Generate</b><span className="muted tiny">Terraform, Docker, Kubernetes, tests, SRS, BRD and runbooks</span></span></button>
+              {confluence?.connected && can(role, "edit") && (
+                <button role="menuitem" onClick={() => { setToolsOpen(false); setConfluenceOpen(true); }}>
+                  <span className="mi-icon" aria-hidden>⇪</span>
+                  <span className="mi-text"><b>Publish to Confluence</b><span className="muted tiny">The architecture spec as a page in {confluence.space_key}</span></span></button>
+              )}
+              {github?.connected && can(role, "edit") && (
+                <button role="menuitem" onClick={() => { setToolsOpen(false); setGithubOpen(true); }}>
+                  <span className="mi-icon" aria-hidden>⎇</span>
+                  <span className="mi-text"><b>Push to GitHub</b><span className="muted tiny">Requirements as issues in {github.repo}</span></span></button>
+              )}
               <button role="menuitem" onClick={() => { setToolsOpen(false); setConnectOpen(true); }}>
-                <b>⌘ Connect AI agents</b><span className="muted tiny">Claude, Codex and others over MCP</span></button>
+                <span className="mi-icon" aria-hidden>⌘</span>
+                <span className="mi-text"><b>Connect AI agents</b><span className="muted tiny">Claude, Codex and others over MCP</span></span></button>
+              <button role="menuitem" onClick={() => { setToolsOpen(false); setAccessOpen(true); }}>
+                <span className="mi-icon" aria-hidden>⚿</span>
+                <span className="mi-text"><b>Project access</b><span className="muted tiny">{can(role, "admin") ? "Give people a different role on this project" : "Who can do what on this project"}</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); toggleCanvasFull(); }}>
-                <b>⛶ Full-screen canvas</b><span className="muted tiny">Shortcut: F</span></button>
+                <span className="mi-icon" aria-hidden>⛶</span>
+                <span className="mi-text"><b>Full-screen canvas</b><span className="muted tiny">Shortcut: F</span></span></button>
               <div className="tools-sep" />
-              <label className="tools-field" hidden={readOnly}><span className="tiny muted">Convert to another platform</span>
-        <select className="convert" value="" disabled={converting || readOnly} hidden={readOnly} aria-label="Convert architecture to another platform"
-          title="Swap every recognised component for its equivalent on another platform"
-          onChange={async (e) => {
-            const target = e.target.value;
-            if (!target) return;
-            setToolsOpen(false);
-            setConverting(true);
-            try {
-              const r = await api.convert(pid, branch, target, user.name);
-              toast(r.changed ? `Converted ${r.changed} component(s) to ${catalog?.vendors[target] ?? target}` : "Nothing to convert");
-              if (r.skipped.length) toast(`No equivalent for: ${r.skipped.join(", ")}`);
-            } catch (err) { toast(`⚠ ${(err as Error).message}`); }
-            finally { setConverting(false); }
-          }}>
-          <option value="">{converting ? "Converting…" : "⇄ Convert to…"}</option>
-          <option value="aws">AWS</option><option value="azure">Azure</option>
-          <option value="gcp">Google Cloud</option><option value="oss">Open source (self-hosted)</option>
-        </select>
-              </label>
-              <label className="tools-field"><span className="tiny muted">Export diagram</span>
-        <select className="convert" value="" disabled={exporting} aria-label="Export this diagram"
-          title="Export the diagram you are looking at (the system, or a component's internals)"
-          onChange={async (e) => {
-            const kind = e.target.value as "png" | "svg" | "html" | "";
-            if (!kind) return;
-            setToolsOpen(false);
-            setExporting(true);
-            const name = exportName(project?.name ?? "diagram", branch, level ? state?.nodes[level]?.name ?? level : "");
-            try {
-              if (kind === "html") toast(`Saved ${await api.exportDiagram(pid, branch, level)}`);
-              else {
-                await exportCanvasImage(nodes.filter((n) => !n.id.startsWith("ghost:")), kind, name);
-                toast(`Saved ${name}.${kind}`);
-              }
-            } catch (err) { toast(`⚠ ${(err as Error).message}`); }
-            finally { setExporting(false); }
-          }}>
-          <option value="">{exporting ? "Exporting…" : "⤓ Export"}</option>
-          <option value="png">PNG image</option>
-          <option value="svg">SVG image</option>
-          <option value="html">Interactive diagram (HTML)</option>
-        </select>
-              </label>
+              {!readOnly && (
+                <div className="tools-field" role="group" aria-label="Convert architecture to another platform"
+                  title="Swap every recognised component for its equivalent on another platform">
+                  <span className="tiny muted">{converting ? "Converting…" : "⇄ Convert to another platform"}</span>
+                  <div className="tools-chips">
+                    {([["aws", "AWS"], ["azure", "Azure"], ["gcp", "Google Cloud"], ["oss", "Open source"]] as const).map(([target, name]) => (
+                      <button key={target} role="menuitem" className="tools-chip" disabled={converting} aria-label={`Convert to ${name}`}
+                        onClick={() => convertTo(target)}>{name}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="tools-field" role="group" aria-label="Export this diagram"
+                title="Export the diagram you are looking at (the system, or a component's internals)">
+                <span className="tiny muted">{exporting ? "Exporting…" : "⤓ Export diagram"}</span>
+                <div className="tools-chips">
+                  {([["png", "PNG", "PNG image"], ["svg", "SVG", "SVG image"], ["html", "HTML", "Interactive diagram (HTML)"]] as const).map(([kind, short, name]) => (
+                    <button key={kind} role="menuitem" className="tools-chip" disabled={exporting} aria-label={`Export as ${name}`} title={name}
+                      onClick={() => exportAs(kind)}>{short}</button>
+                  ))}
+                </div>
+              </div>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setExportOpen(true); }}>
-                <b>⤓ Export spec &amp; agent guides</b><span className="muted tiny">Markdown, PDF, JSON, YAML, CLAUDE.md, AGENTS.md, .cursorrules</span></button>
+                <span className="mi-icon" aria-hidden>⤓</span>
+                <span className="mi-text"><b>Export spec &amp; agent guides</b><span className="muted tiny">Markdown, PDF, JSON, YAML, CLAUDE.md, AGENTS.md, .cursorrules</span></span></button>
+              <div className="tb-overflow tools-theme">
+                <span className="tiny muted">Theme</span>{themeToggle}
+              </div>
             </div>
           )}
         </div>
-        {themeToggle}
-        <div className="presence">
+        <span className="tb-hide-sm">{themeToggle}</span>
+        <div className="presence tb-hide-sm">
           <span className={`conn ${live.status === "connected" && live.synced ? "on" : ""}`}
             title={live.status === "connected" ? (live.synced ? "Live: changes sync instantly" : "Syncing…") : "Reconnecting… your edits are kept and sync when back online"} />
           {others.map((u) => <span key={u.clientId} className="avatar" style={{ background: u.color }} title={u.name}>{u.name[0]?.toUpperCase()}</span>)}
         </div>
-        <button className="primary" onClick={() => setPromptFor({ nodeIds: selectedNodeIds, requirementIds: [] })}
+        <button className="primary vibe-btn" onClick={() => setPromptFor({ nodeIds: selectedNodeIds, requirementIds: [] })}
           title="Turn this design (or the selected components) into a change spec for a coding agent">
           ⚙ Vibe code{selectedNodeIds.length ? ` (${selectedNodeIds.length})` : ""}
         </button>
@@ -855,7 +988,12 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           selfId={me.user.id} onClose={() => { setAiSettingsOpen(false); window.location.reload(); }} />
       )}
 
-      <aside className="sidebar">
+      {drawer && <div className="drawer-scrim" onClick={() => setDrawer(null)} aria-hidden />}
+      <aside className={`sidebar ${drawer === "left" ? "open" : ""}`}>
+        <div className="drawer-head">
+          <b>Panels</b>
+          <button className="ghost icon-btn" onClick={() => setDrawer(null)} aria-label="Close panels" title="Close">✕</button>
+        </div>
         <nav className="tabs side-tabs" role="tablist" aria-label="Project panels">
           {((dock === "left" ? ["chat"] : []).concat(["requirements", "issues", "comments", "versions", "decisions"]) as Tab[]).map((t) => {
             const meta = TAB_META[t];
@@ -876,7 +1014,9 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           <RequirementsPanel state={state} issues={analysis?.requirement_issues ?? []} traced={traced} onTrace={setTraced} readOnly={readOnly}
             send={send} onPrompt={(rid) => setPromptFor({ nodeIds: [], requirementIds: [rid] })}
             pid={pid} branch={branch} isAdmin={can(role, "admin")} toast={toast} onMemoryChanged={loadMemory}
-            jira={jiraByReq} onJira={jira?.connected && can(role, "edit") ? () => setJiraOpen(true) : undefined} />
+            jira={jiraByReq} onJira={jira?.connected && can(role, "edit") ? () => setJiraOpen(true) : undefined}
+            github={githubByReq} onGitHub={github?.connected && can(role, "edit") ? () => setGithubOpen(true) : undefined}
+            onMeetingImported={(c) => { if (c.knowledge) setKbVersion((v) => v + 1); }} />
         )}
         {tab === "issues" && (
           <IssuesPanel pid={pid} branch={branch} analysis={analysis} aiAvailable={!!ai?.available} onFocus={focusIssue}
@@ -912,8 +1052,9 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           deleteKeyCode={readOnly ? null : ["Delete", "Backspace"]} multiSelectionKeyCode={["Shift", "Meta", "Control"]}
           selectionKeyCode="Shift" colorMode={colorMode} fitView fitViewOptions={{ padding: 0.15 }} minZoom={0.1} maxZoom={2.5} proOptions={{ hideAttribution: true }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={20} size={1} />
-          <Controls position="center-right">
+          <Background id="minor" variant={BackgroundVariant.Dots} gap={20} size={1.3} className="bg-minor" />
+          <Background id="major" variant={BackgroundVariant.Lines} gap={100} lineWidth={1} className="bg-major" />
+          <Controls position="bottom-right" className="canvas-controls" showInteractive={false}>
             {!readOnly && (
               <>
                 <ControlButton onClick={() => tidy(true)} title="Tidy up: arrange this diagram in tiers (L) · Ctrl+Z undoes"
@@ -927,7 +1068,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
               </>
             )}
           </Controls>
-          <MiniMap position="top-right" pannable zoomable nodeColor={(n) => TYPE_META[(n.data as { model: ArchNode }).model.type]?.color ?? "#999"} />
+          <MiniMap position="top-right" pannable zoomable className="canvas-minimap" nodeBorderRadius={6} nodeStrokeWidth={0}
+            nodeColor={(n) => TYPE_META[(n.data as { model: ArchNode }).model.type]?.color ?? "#999"} />
           <ViewportPortal>
             {others.filter((c) => c.cursor && (c.cursor.level ?? "") === level).map((c) => (
               <div key={c.clientId} className="remote-cursor" style={{ transform: `translate(${c.cursor!.x}px, ${c.cursor!.y}px)`, color: c.color }}>
@@ -937,7 +1079,30 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
             ))}
           </ViewportPortal>
         </ReactFlow>
-        {!readOnly && state && <Palette catalog={catalog} startOpen={Object.keys(state.nodes).length === 0} />}
+        {!readOnly && state && (
+          <Palette catalog={catalog} open={compact ? paletteSheet : !!paletteOpen}
+            onOpenChange={setPaletteOpen} onAdd={addAtCenter} sheet={compact} />
+        )}
+        {compact && !canvasFull && (
+          <div className="canvas-fab" role="toolbar" aria-label="Canvas actions">
+            <button onClick={() => setDrawer(drawer === "left" ? null : "left")} aria-pressed={drawer === "left"} aria-label="Show panels">
+              <FabIcon d="M3 4.5h10M3 8h10M3 11.5h10" /><span className="fab-label">Panels</span></button>
+            {!readOnly && (
+              <button onClick={() => setPaletteOpen(!paletteSheet)} aria-pressed={paletteSheet} aria-label="Add a component">
+                <FabIcon d="M8 3v10M3 8h10" /><span className="fab-label">Add</span></button>
+            )}
+            <button onClick={() => flow.fitView({ padding: 0.15, duration: 300 })} aria-label="Fit the diagram to the screen">
+              <FabIcon d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10" /><span className="fab-label">Fit</span></button>
+            {!readOnly && (
+              <button onClick={() => tidy(true)} aria-label="Tidy up the layout">
+                <FabIcon d="M2 2.5h5v4H2zM9 2.5h5v4H9zM5.5 10h5v4h-5zM4.5 6.5V8h7V6.5M8 8v2" /><span className="fab-label">Tidy</span></button>
+            )}
+            <button onClick={() => { if (dock === "right") setRightTab("props"); setDrawer(drawer === "right" ? null : "right"); }}
+              aria-pressed={drawer === "right"} aria-label="Show properties">
+              <FabIcon d="M2.5 4h11M2.5 8h11M2.5 12h11M5.5 2.5v3M10.5 6.5v3M7 10.5v3" /><span className="fab-label">Properties</span>
+              {selectionCount > 0 && <span className="fab-count">{selectionCount}</span>}</button>
+          </div>
+        )}
         {canvasFull && (
           <button className="canvas-exit-full" onClick={toggleCanvasFull} title="Exit full screen (Esc or F)">✕ Exit full screen</button>
         )}
@@ -968,7 +1133,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         {state && !level && Object.keys(state.nodes).length === 0 && (
           <div className="empty-canvas">
             <h3>Empty canvas</h3>
-            <p className="muted">Drag components from the palette, or describe your system in the assistant (Design mode), e.g.
+            <p className="muted">{compact ? "Tap ＋ Add to place components" : "Drag components from the palette"}, or describe your system in the assistant (Design mode), e.g.
               “Build an AI customer-support platform where customers use WhatsApp and web.”</p>
           </div>
         )}
@@ -976,7 +1141,11 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         <div className="toasts">{toasts.map((t) => <div key={t.id} className="toast">{t.text}</div>)}</div>
       </main>
 
-      <aside className={`rightbar ${dock === "right" ? "with-chat" : ""}`}>
+      <aside className={`rightbar ${dock === "right" ? "with-chat" : ""} ${drawer === "right" ? "open" : ""}`}>
+        <div className="drawer-head">
+          <b>{dock === "right" && rightTab === "chat" ? "Assistant" : "Properties"}</b>
+          <button className="ghost icon-btn" onClick={() => setDrawer(null)} aria-label="Close properties" title="Close">✕</button>
+        </div>
         {dock === "right" && (
           <nav className="tabs">
             <button className={rightTab === "chat" ? "on" : ""} onClick={() => setRightTab("chat")} role="tab" aria-selected={rightTab === "chat"}>Assistant</button>
@@ -999,7 +1168,42 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       )}
       {jiraOpen && jira && (
         <JiraDialog pid={pid} branch={branch} defaultKey={jira.project_key} aiAvailable={!!ai?.available}
+          orgId={project?.org_id} isAdmin={can(role, "admin")} toast={toast}
           onClose={() => setJiraOpen(false)} onChanged={loadJira} />
+      )}
+      {knowledgeOpen && (
+        <KnowledgeDialog pid={pid} canEdit={can(role, "edit")} version={kbVersion} onClose={() => setKnowledgeOpen(false)} />
+      )}
+      {costsOpen && (
+        <CostDialog pid={pid} branch={branch} aiAvailable={!!ai?.available} rev={state?.rev ?? 0} onClose={() => setCostsOpen(false)}
+          onSelect={(id) => { setCostsOpen(false); focusNodes([id]); }} />
+      )}
+      {complianceOpen !== null && (
+        <ComplianceDialog pid={pid} branch={branch} rev={state?.rev ?? 0} open={complianceOpen} canEdit={can(role, "edit")}
+          aiAvailable={!!ai?.available} toast={toast} onClose={() => setComplianceOpen(false)}
+          names={Object.fromEntries(Object.values(state?.nodes ?? {}).map((n) => [n.id, n.name]))}
+          onShow={(ids) => { const known = ids.filter((id) => state?.nodes[id]); if (known.length) { setComplianceOpen(false); focusNodes(known); } }}
+          onAddRequirement={(p) => {
+            send([{ op: "add_requirement", requirement: { title: p.title, description: p.description, kind: "non_functional",
+              category: p.category, priority: p.priority, acceptance_criteria: p.acceptance_criteria,
+              source: { type: "compliance", ref: p.controls.join(", ") } } }]);
+            toast(`Added requirement: ${p.title}`);
+          }} />
+      )}
+      {generateOpen && (
+        <GenerateDialog pid={pid} branch={branch} aiAvailable={!!ai?.available} canEdit={can(role, "edit")} toast={toast}
+          onClose={() => setGenerateOpen(false)} />
+      )}
+      {githubOpen && github && (
+        <GitHubDialog pid={pid} branch={branch} repo={github.repo ?? ""} onClose={() => setGithubOpen(false)} onChanged={loadGithub} />
+      )}
+      {confluenceOpen && confluence && (
+        <ConfluenceDialog pid={pid} branch={branch} space={confluence.space_key ?? ""} onClose={() => setConfluenceOpen(false)} />
+      )}
+      {accessOpen && (
+        <ProjectAccessDialog pid={pid} projectName={project?.name ?? "this project"} selfId={me.user.id}
+          onClose={() => setAccessOpen(false)}
+          onChanged={() => { api.project(pid, branch).then((p) => setRole(p.role)).catch(() => {}); }} />
       )}
       {connectOpen && project && (
         <ConnectDialog orgId={project.org_id ?? "org-default"} canManage={can(role, "admin")} onClose={() => setConnectOpen(false)} />

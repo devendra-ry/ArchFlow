@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Select, plainOptions } from "./Select";
 
 /**
  * An input that edits one field of a shared object.
@@ -40,9 +41,7 @@ export function Field({ label, value, rev, onCommit, multiline, options, placeho
     return (
       <label className="field">
         <span>{label}</span>
-        <select value={value} onChange={(e) => onCommit(e.target.value, rev)}>
-          {options.map((o) => <option key={o} value={o}>{o}</option>)}
-        </select>
+        <Select value={value} onChange={(v) => onCommit(v, rev)} aria-label={label} options={plainOptions(options)} />
       </label>
     );
   }
