@@ -46,6 +46,9 @@ ArchFlow treats requirements, architecture, decisions and versions as **one stru
 ### Landing Page
 ![Landing Page](docs/screenshots/01_landing.png)
 
+### Sign In — Email & Single Sign-On
+![Sign In](docs/screenshots/22_sign_in.png)
+
 ### Home — Projects, AI Status and Organization
 ![Home](docs/screenshots/02_home.png)
 
@@ -88,6 +91,24 @@ ArchFlow treats requirements, architecture, decisions and versions as **one stru
 ### Vibe Code — OpenSpec Changes for Coding Agents
 ![Vibe Code](docs/screenshots/16_vibe_code.png)
 
+### Generate — Terraform, Kubernetes, Tests & Documents
+![Generate](docs/screenshots/24_generate.png)
+
+### Compliance — SOC 2, HIPAA, GDPR, PCI DSS & ISO 27001
+![Compliance](docs/screenshots/25_compliance.png)
+
+### Cost Estimate
+![Cost Estimate](docs/screenshots/26_cost_estimate.png)
+
+### Knowledge Base — Documents & Meeting Transcripts
+![Knowledge Base](docs/screenshots/27_knowledge_base.png)
+
+### Diagrams — C4, Sequence, ER, Deployment & Data Flow
+![Diagrams](docs/screenshots/28_diagrams.png)
+
+### Branch Merge — Three-Way Diff
+![Branch Merge](docs/screenshots/29_branch_merge.png)
+
 ### Code → Architecture (reconstructed from a repository)
 ![Code to Architecture](docs/screenshots/12_code_to_architecture.png)
 
@@ -105,6 +126,9 @@ ArchFlow treats requirements, architecture, decisions and versions as **one stru
 
 ### AI Usage & Monthly Budget
 ![AI Usage](docs/screenshots/14_ai_usage.png)
+
+### AI Traces — Every Run, Step by Step
+![AI Traces](docs/screenshots/23_ai_traces.png)
 
 ### Dark Mode
 ![Dark Mode](docs/screenshots/18_dark_mode.png)
