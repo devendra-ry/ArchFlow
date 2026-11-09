@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ArrowUpDown, ExternalLink, Icon, Mic, SquareTerminal, Upload } from "../icons";
 import { api } from "../api";
 import type { Issue, JiraLink, Op, ProjectState, Requirement, RequirementRevision } from "../types";
 import { Field } from "./Field";
@@ -142,11 +143,11 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
           <div className="row gap">
             <button className="small primary" onClick={() => add("functional")} title="A feature the system must provide">+ Functional</button>
             <button className="small" onClick={() => add("non_functional")} title="A quality target: performance, security, cost…">+ Non-functional</button>
-            <button className="small" onClick={() => setImporting(true)} title="Import requirements from a document (PDF, Word, Markdown, text)">⇪ Import</button>
+            <button className="small" onClick={() => setImporting(true)} title="Import requirements from a document (PDF, Word, Markdown, text)"><Icon as={Upload} size={14} /> Import</button>
             <button className="small" onClick={() => setMeeting(true)}
-              title="Import requirements, decisions and action items from a meeting transcript or recording">🎙 Meeting</button>
-            {onJira && <button className="small" onClick={onJira} title="Push requirements to Jira, or pull Jira issues in as requirements">Jira ⇅</button>}
-            {onGitHub && all.length > 0 && <button className="small" onClick={onGitHub} title="Preview, then push requirements to GitHub as issues">GitHub ↗</button>}
+              title="Import requirements, decisions and action items from a meeting transcript or recording"><Icon as={Mic} size={14} /> Meeting</button>
+            {onJira && <button className="small" onClick={onJira} title="Push requirements to Jira, or pull Jira issues in as requirements">Jira <Icon as={ArrowUpDown} size={14} /></button>}
+            {onGitHub && all.length > 0 && <button className="small" onClick={onGitHub} title="Preview, then push requirements to GitHub as issues">GitHub <Icon as={ExternalLink} size={14} /></button>}
           </div>
         )}
       </div>
@@ -242,7 +243,7 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
                     </div>
                   ) : (
                     <div className="insp-actions">
-                      <button onClick={() => onPrompt(r.id)} title="Turn this requirement into a change spec for a coding agent">⚙ Vibe code this</button>
+                      <button onClick={() => onPrompt(r.id)} title="Turn this requirement into a change spec for a coding agent"><Icon as={SquareTerminal} size={14} /> Vibe code this</button>
                       {!readOnly && <button className="danger" onClick={() => send([{ op: "remove_requirement", id: r.id }])}
                         title="Moves it to Deleted, where it can be restored">Delete</button>}
                     </div>

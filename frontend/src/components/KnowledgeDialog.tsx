@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon, X } from "../icons";
 import { api } from "../api";
 import type { KbAnswer, KbCitation, KbPassage, KbStatus } from "../types";
 import { Markdown } from "./Markdown";
@@ -166,7 +167,7 @@ export function KnowledgeDialog({ pid, canEdit, onClose, version }: Props) {
                     <td>{d.chunks}</td>
                     <td className="muted" title={d.embedding_model || "keyword search only"}>{d.embedding_model ? "keywords + meaning" : "keywords"}</td>
                     <td className="muted">{new Date(d.created_at).toLocaleDateString()} · {d.created_by}</td>
-                    <td>{canEdit && <button className="ghost small" onClick={() => remove(d.id, d.name)} aria-label={`Remove ${d.name}`}>✕</button>}</td>
+                    <td>{canEdit && <button className="ghost small" onClick={() => remove(d.id, d.name)} aria-label={`Remove ${d.name}`}><Icon as={X} size={12} /></button>}</td>
                   </tr>
                 ))}
               </tbody>

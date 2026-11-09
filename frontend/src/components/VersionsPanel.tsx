@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, GitBranch, Icon } from "../icons";
 import { api } from "../api";
 import { APPROVER_ROLES, can, type Activity, type Branch, type Diff, type ReviewStatus, type Role, type Version, type VersionReview } from "../types";
 
@@ -109,13 +110,13 @@ export function VersionsPanel({ pid, role, versions, activity, branch, headVersi
       {branches.length > 1 && (
         <>
           <button className="section-toggle" onClick={() => setShowBranches(!showBranches)} aria-expanded={showBranches}>
-            {showBranches ? "▾" : "▸"} Branches <span className="muted small">{branches.length}</span>
+            {showBranches ? <Icon as={ChevronDown} size={12} /> : <Icon as={ChevronRight} size={12} />} Branches <span className="muted small">{branches.length}</span>
           </button>
           {showBranches && (
             <ul className="branch-list">
               {branches.map((b) => (
                 <li key={b.name}>
-                  <span className="grow small mono">⎇ {b.name}</span>
+                  <span className="grow small mono"><Icon as={GitBranch} size={12} /> {b.name}</span>
                   {b.name === branch && <span className="chip on">current</span>}
                   {b.base_version !== null && <span className="muted tiny">from v{b.base_version}</span>}
                   {onMerge && <button className="small" onClick={() => onMerge(b.name)} title={`Three-way merge ${b.name} into another branch`}>Merge into…</button>}
@@ -127,7 +128,7 @@ export function VersionsPanel({ pid, role, versions, activity, branch, headVersi
       )}
 
       <button className="section-toggle" onClick={() => setShowActivity(!showActivity)} aria-expanded={showActivity}>
-        {showActivity ? "▾" : "▸"} Activity <span className="muted small">{activity.length}</span>
+        {showActivity ? <Icon as={ChevronDown} size={12} /> : <Icon as={ChevronRight} size={12} />} Activity <span className="muted small">{activity.length}</span>
       </button>
       {showActivity && (
         <ul className="activity-list">

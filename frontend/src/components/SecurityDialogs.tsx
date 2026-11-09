@@ -1,3 +1,4 @@
+import { Brand } from "./Logo";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ROLES, type AuthSettings, type MfaStatus, type ProjectRole, type ProjectRoles, type Role } from "../types";
@@ -106,10 +107,10 @@ export function MfaDialog({ onClose }: { onClose: () => void }) {
 export function MfaRequiredScreen({ onDone, onLogout, themeToggle }: { onDone: () => void; onLogout: () => void; themeToggle?: React.ReactNode }) {
   const [enabled, setEnabled] = useState(false);
   return (
-    <div className="picker auth">
-      <header className="picker-head">
-        <div className="row between"><span className="brand"><span className="logo">▲</span> ArchFlow</span>{themeToggle}</div>
-      </header>
+    <div className="auth">
+      <aside className="auth-aside"><Brand /></aside>
+      <main className="auth-main">
+      <div className="auth-top">{themeToggle}</div>
       <div className="card auth-card">
         <h2>Turn on two-step sign-in</h2>
         <p className="small muted">Your organization requires it. It takes about a minute.</p>
@@ -119,6 +120,7 @@ export function MfaRequiredScreen({ onDone, onLogout, themeToggle }: { onDone: (
           <button className="primary" disabled={!enabled} onClick={onDone}>Continue</button>
         </div>
       </div>
+      </main>
     </div>
   );
 }

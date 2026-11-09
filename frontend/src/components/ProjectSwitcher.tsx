@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { ChevronDown, Icon } from "../icons";
 import { api } from "../api";
 import { getRecent, lastBranch, pruneRecent, timeAgo } from "../recent";
 import { can, type Me, type Project } from "../types";
@@ -134,7 +135,7 @@ export function ProjectSwitcher({ me, current, open, onOpenChange, onOpen, onHom
         aria-expanded={open} title={`Switch project (${SWITCHER_SHORTCUT})`}>
         <span className="switcher-name">{current?.name ?? "…"}</span>
         {current?.org_id && me.orgs.length > 1 && <span className="switcher-org">{orgName.get(current.org_id)}</span>}
-        <span className="switcher-chevron" aria-hidden>▾</span>
+        <span className="switcher-chevron" aria-hidden><Icon as={ChevronDown} size={14} /></span>
       </button>
       {open && (
         <div className="switcher-pop" role="dialog" aria-label="Switch project" style={{ top: pos.top, left: pos.left }}>

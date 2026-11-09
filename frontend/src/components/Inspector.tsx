@@ -1,9 +1,11 @@
+import { MousePointerClick } from "lucide-react";
+import { ArrowLeftRight, CornerDownRight, Icon, SquareTerminal } from "../icons";
 import { activeRequirements, NODE_TYPES, type Catalog, type Op, type ProjectState, type StaleLink, type JiraLink } from "../types";
 import { JiraBadge } from "./RequirementsPanel";
 import { VENDOR_STYLE } from "./Palette";
 import { Field } from "./Field";
 import { Select } from "./Select";
-import { TYPE_META } from "./ArchNode";
+import { TYPE_META, TypeIcon } from "./ArchNode";
 import { LldViews } from "./LldViews";
 import { codeUrl } from "./CodeDialog";
 
@@ -79,7 +81,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
     return (
       <div className="inspector">
         <div className="insp-head" style={{ ["--accent" as string]: TYPE_META[n.type].color }}>
-          <span className="an-glyph">{TYPE_META[n.type].glyph}</span> {n.name}
+          <TypeIcon type={n.type} size={14} /> {n.name}
           <span className="muted small mono">{n.id}</span>
         </div>
         <fieldset className="bare" disabled={readOnly}>
@@ -95,7 +97,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
                 {n.vendor && VENDOR_STYLE[n.vendor] && <span className="vbadge" style={{ ["--vc" as string]: VENDOR_STYLE[n.vendor].color, marginLeft: 6 }}>{VENDOR_STYLE[n.vendor].short}</span>}
               </span>
               {alts.length > 0 && (
-                <Select value="" aria-label="Swap for an equivalent service" placeholder="⇄ Swap for an equivalent…" menuWidth={260}
+                <Select value="" aria-label="Swap for an equivalent service" placeholder="Swap for an equivalent…" menuWidth={260}
                   options={alts.map((a) => ({ value: a.id, label: a.name, hint: catalog!.vendors[a.vendor] }))} onChange={(id) => {
                   const alt = catalog!.items.find((c) => c.id === id);
                   if (!alt) return;
@@ -154,10 +156,10 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
         <div className="insp-actions">
           {onOpenInternals && n.type !== "note" && (
             <button onClick={() => onOpenInternals(n.id)} title="Open this component's internal (low-level) diagram">
-              Open internals ↘{(() => { const k = Object.values(state.nodes).filter((x) => x.parent_id === n.id).length; return k ? ` (${k})` : ""; })()}
+              Open internals <Icon as={CornerDownRight} size={14} />{(() => { const k = Object.values(state.nodes).filter((x) => x.parent_id === n.id).length; return k ? ` (${k})` : ""; })()}
             </button>
           )}
-          <button onClick={onPrompt}>⚙ Build this (coding prompt)</button>
+          <button onClick={onPrompt}><Icon as={SquareTerminal} size={14} /> Build this (coding prompt)</button>
           {!readOnly && <button className="danger" onClick={() => send([{ op: "remove_node", id: n.id }])}>Delete</button>}
         </div>
         {pid && branch && !n.parent_id && n.type !== "note" && <LldViews pid={pid} branch={branch} nodeId={n.id} rev={state.rev} />}
@@ -181,7 +183,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
         </fieldset>
         {!readOnly && (
           <div className="insp-actions">
-            <button onClick={() => send([{ op: "update_edge", id: e.id, changes: { source: e.target, target: e.source } }])}>⇄ Reverse</button>
+            <button onClick={() => send([{ op: "update_edge", id: e.id, changes: { source: e.target, target: e.source } }])}><Icon as={ArrowLeftRight} size={14} /> Reverse</button>
             <button className="danger" onClick={() => send([{ op: "remove_edge", id: e.id }])}>Delete</button>
           </div>
         )}
@@ -195,7 +197,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
         <div className="insp-head">{nodeIds.length} components, {edgeIds.length} connections</div>
         <p className="muted small">Ctrl+C / Ctrl+V to copy, Ctrl+D to duplicate, Delete to remove.</p>
         <div className="insp-actions">
-          <button onClick={onPrompt}>⚙ Build selected architecture</button>
+          <button onClick={onPrompt}><Icon as={SquareTerminal} size={14} /> Build selected architecture</button>
           {!readOnly && <button className="danger" onClick={() => send([
             ...edgeIds.filter((id) => !nodeIds.includes(state.edges[id]?.source) && !nodeIds.includes(state.edges[id]?.target))
               .map((id) => ({ op: "remove_edge", id })),
@@ -208,21 +210,21 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
 
   return (
     <div className="inspector empty">
+      <div className="insp-empty-icon" aria-hidden><MousePointerClick size={20} strokeWidth={1.75} /></div>
+      <p className="insp-empty-title">Nothing selected</p>
       <p className="muted small">{readOnly ? "Select a component or connection to see its details. You have read-only access."
         : "Select a component or connection to edit it."}</p>
-      {readOnly ? (
-        <ul className="muted small tips">
-          <li>Double-click a component to open its internals.</li>
-          <li>Use Ask to question the architecture, e.g. “What happens if the database fails?”.</li>
-        </ul>
-      ) : (
-        <ul className="muted small tips">
-          <li>Drag components from the palette onto the canvas.</li>
-          <li>Drag from a handle to another component to connect.</li>
-          <li>Shift-drag to box-select; Delete removes.</li>
-          <li>Type commands like “Add Redis between Order Service and Orders DB”.</li>
-        </ul>
-      )}
+      <ul className="tips">
+        {(readOnly ? [
+          ["Double-click", "a component to open its internals"],
+          ["Ask", "questions such as “What happens if the database fails?”"],
+        ] : [
+          ["Drag", "components from the palette onto the canvas"],
+          ["Drag a handle", "to another component to connect them"],
+          ["Shift-drag", "to box-select; Delete removes"],
+          ["Type", "“Add Redis between Order Service and Orders DB”"],
+        ]).map(([k, v]) => <li key={k}><b>{k}</b> <span>{v}</span></li>)}
+      </ul>
     </div>
   );
 }

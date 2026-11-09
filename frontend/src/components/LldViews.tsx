@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Download, Icon } from "../icons";
 import { api } from "../api";
 import type { ComponentViews } from "../types";
 import { MermaidDiagram } from "./MermaidDiagram";
@@ -68,7 +69,7 @@ export function LldViews({ pid, branch, nodeId, rev }: Props) {
                   try { await api.exportSequence(pid, branch, nodeId); }
                   catch (e) { setError((e as Error).message); }
                   finally { setExporting(false); }
-                }}>{exporting ? "Exporting…" : "⤓ Interactive diagram"}</button>
+                }}>{exporting ? "Exporting…" : <><Icon as={Download} size={14} /> Interactive diagram</>}</button>
             </div>
           )}
           <details className="view-source">

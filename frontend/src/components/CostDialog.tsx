@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useState } from "react";
+import { Download, Icon, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import { Select } from "./Select";
@@ -60,8 +61,8 @@ export function CostDialog({ pid, branch, aiAvailable, rev, onClose, onSelect }:
         <div className="row between">
           <h3>Cost estimate · {branch}</h3>
           <span className="row gap">
-            <button className="small" onClick={() => api.costsCsv(pid, branch).catch((e) => setError(e.message))}>⤓ CSV</button>
-            <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+            <button className="small" onClick={() => api.costsCsv(pid, branch).catch((e) => setError(e.message))}><Icon as={Download} size={14} /> CSV</button>
+            <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
           </span>
         </div>
         {!est && busy && <p className="small muted"><span className="spinner" aria-hidden /> Pricing the architecture…</p>}

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Bell, Icon } from "../icons";
 import { api } from "../api";
 import type { AppNotification } from "../types";
 import { onMenuKeyDown } from "./Select";
@@ -43,7 +44,7 @@ export function NotificationBell({ refreshKey, onOpen }: { refreshKey: number; o
     <div className="notif" ref={ref}>
       <button className="ghost notif-btn" onClick={() => { setOpen(!open); if (!open) load(); }} aria-haspopup="menu" aria-expanded={open}
         aria-label={unread ? `Notifications, ${unread} unread` : "Notifications"} title="Mentions, replies and reviews">
-        <span aria-hidden>🔔</span>
+        <Icon as={Bell} size={16} />
         {unread > 0 && <span className="notif-count">{unread > 99 ? "99+" : unread}</span>}
       </button>
       {open && (

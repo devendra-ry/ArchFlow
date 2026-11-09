@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { ChevronDown, ChevronRight, Icon, TriangleAlert } from "../icons";
 import { api } from "../api";
 import type { AiSpan, AiTrace, AiTraceSummary, PromptInfo } from "../types";
 import { FEATURE_LABEL, Modal, tokens, usd } from "./OrgDialogs";
@@ -42,7 +43,7 @@ function SpanRow({ s, i }: { s: AiSpan; i: number }) {
         {s.kind === "model" && <span className="tiny muted">{tokens(s.prompt_tokens)} in · {tokens(s.completion_tokens)} out · {usd(s.cost_usd)}{s.calls > 1 ? ` · ${s.calls} calls` : ""}</span>}
         {s.latency_ms > 0 && <span className="tiny muted">{ms(s.latency_ms)}</span>}
         {s.status === "error" && <span className="tiny error">error</span>}
-        <span className="tiny muted">{open ? "▾" : "▸"}</span>
+        <span className="tiny muted">{open ? <Icon as={ChevronDown} size={12} /> : <Icon as={ChevronRight} size={12} />}</span>
       </button>
       {open && (
         <div className="trace-span-body">
@@ -121,7 +122,7 @@ function PromptsTab({ orgId }: { orgId: string }) {
       <p className="muted small">Every AI feature runs a versioned prompt (server: <code>archflow/prompts/*.yaml</code>). Released versions are
         locked; a change ships as a new version, is compared with <code>archflow-eval</code>, and can be pinned or rolled back with
         {" "}<code>ARCHFLOW_PROMPTS</code>.</p>
-      {data.problems.length > 0 && <div className="small warn">{data.problems.map((p) => <div key={p}>⚠ {p}</div>)}</div>}
+      {data.problems.length > 0 && <div className="small warn">{data.problems.map((p) => <div key={p}><Icon as={TriangleAlert} size={12} /> {p}</div>)}</div>}
       <table className="trace-table">
         <thead><tr><th>Prompt</th><th>Feature</th><th>Active</th><th>Versions</th></tr></thead>
         <tbody>

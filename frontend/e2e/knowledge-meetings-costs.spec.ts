@@ -44,7 +44,7 @@ test("knowledge base: add a document, ask with citations, search and remove", as
 test("meetings: import a transcript, accept requirements, a decision and an action item", async ({ page }) => {
   const pid = await openNewProject(page, `Meeting ${Date.now()}`);
   await tab(page, "Requirements");
-  await page.getByRole("button", { name: "🎙 Meeting" }).click();
+  await page.getByRole("button", { name: "Meeting", exact: true }).click();
   const dialog = page.getByRole("dialog", { name: "Import a meeting" });
   await dialog.getByLabel("Transcript or recording").setInputFiles({ name: "standup.vtt", mimeType: "text/vtt", buffer: Buffer.from(VTT) });
   await expect(dialog.getByText(/added to the knowledge base/)).toBeVisible();
@@ -84,6 +84,6 @@ test("cost estimate: line items, assumptions from requirements and a budget", as
   await expect(dialog.getByText("set by you").first()).toBeVisible();
   await expect(dialog.locator(".cost-budget")).toContainText("within budget");
   const download = page.waitForEvent("download");
-  await dialog.getByRole("button", { name: "⤓ CSV" }).click();
+  await dialog.getByRole("button", { name: "CSV", exact: true }).click();
   expect((await download).suggestedFilename()).toMatch(/costs\.csv$/);
 });

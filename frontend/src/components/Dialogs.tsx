@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Icon, Sparkles, X } from "../icons";
 import { api } from "../api";
 import { OpenSpecPanel } from "./OpenSpecPanel";
 import { Select } from "./Select";
@@ -52,12 +53,12 @@ export function PromptDialog({ pid, branch, nodeIds, requirementIds, readOnly, o
       <div className="modal wide vibe" role="dialog" aria-label="Vibe coding" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Vibe code: hand this design to a coding agent</h3>
-          <button className="ghost" onClick={onClose} disabled={busy} aria-label="close" title={busy ? "Wait until the change is written" : "Close"}>✕</button>
+          <button className="ghost" onClick={onClose} disabled={busy} aria-label="close" title={busy ? "Wait until the change is written" : "Close"}><Icon as={X} size={16} /></button>
         </div>
         <div className="row between">
           <div className="seg" role="tablist" aria-label="Output">
             <button role="tab" aria-selected={mode === "openspec"} className={mode === "openspec" ? "on" : ""} onClick={() => setMode("openspec")}>
-              ✦ OpenSpec
+              <Icon as={Sparkles} size={14} /> OpenSpec
             </button>
             <button role="tab" aria-selected={mode === "brief"} className={mode === "brief" ? "on" : ""} disabled={busy} onClick={() => setMode("brief")}>
               Quick brief

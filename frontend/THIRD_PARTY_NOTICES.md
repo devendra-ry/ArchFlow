@@ -12,6 +12,9 @@ Apache Spark and Apache Cassandra marks are recorded as Apache-2.0 and remain su
 ## Libraries
 
 - `html-to-image` (MIT): PNG and SVG export of the canvas.
+- `lucide-react` (ISC): the interface icons (`src/icons.tsx`, component types in `src/components/ArchNode.tsx`).
+- `@fontsource-variable/geist` and `@fontsource-variable/geist-mono` (SIL Open Font License 1.1): the Geist and Geist Mono
+  typefaces, bundled with the app so no font is fetched from a third-party server.
 - `mermaid` (MIT): drawing the sequence and data-model views of a component's low-level design.
 
 Interactive HTML exports are rendered on the server by Archify (MIT); see `backend/vendor/archify/VENDORED.md`

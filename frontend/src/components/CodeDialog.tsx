@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Icon, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import type { CodeJob, CodeOverview, DriftResult, ImpactResult, Issue } from "../types";
@@ -104,7 +105,7 @@ export function CodeDialog({ pid, branch, readOnly, onClose, onOpenBranch, onFoc
       <div className="modal wide code-dialog" role="dialog" aria-label="Code analysis" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Code ↔ architecture</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         <p className="muted small">
           Analyse a repository into a code graph (files, symbols, calls, imports, communities) and detected infrastructure,

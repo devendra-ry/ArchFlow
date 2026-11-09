@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { CircleCheck, Icon, TriangleAlert } from "../icons";
 import { api } from "../api";
 import type { Analysis, Issue, ReviewResult } from "../types";
 
@@ -62,7 +63,7 @@ function AIReview({ pid, branch, aiAvailable, onShow, onFix }: Pick<Props, "pid"
           <div className="specialists">
             {specialists.map(([k, s]) => (
               <span key={k} className={`chip ${s.status === "ok" ? "" : "bad"}`} title={s.status === "ok" ? s.summary : s.error}>
-                {s.status === "ok" ? "✓" : "⚠"} {s.label} {s.status === "ok" ? `· ${s.findings}` : ""}
+                {s.status === "ok" ? <Icon as={CircleCheck} size={12} /> : <Icon as={TriangleAlert} size={12} />} {s.label} {s.status === "ok" ? `· ${s.findings}` : ""}
               </span>
             ))}
           </div>

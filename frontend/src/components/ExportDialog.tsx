@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon, TriangleAlert, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import { Copy } from "./ConnectDialog";
@@ -63,7 +64,7 @@ export function ExportDialog({ pid, branch, aiAvailable, toast, onClose }: Props
       <div className="modal wide" role="dialog" aria-label="Export specification" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Export spec &amp; agent guides</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         <p className="muted small">Everything is built from branch <b>{branch}</b>: requirements, components, low-level designs,
           decisions, project memory and health.</p>
@@ -90,7 +91,7 @@ export function ExportDialog({ pid, branch, aiAvailable, toast, onClose }: Props
         <nav className="tabs inline">
           {GUIDES.map((g) => <button key={g} className={tab === g ? "on" : ""} onClick={() => setTab(g)}>{g}</button>)}
         </nav>
-        {error && <p className="small" role="alert">⚠ {error}</p>}
+        {error && <p className="small" role="alert"><Icon as={TriangleAlert} size={14} /> {error}</p>}
         {guides?.notes.map((n) => <p key={n} className="muted tiny">{n}</p>)}
         <div className="snippet" style={{ maxHeight: "45vh", overflow: "auto" }}>
           <pre aria-label={`${tab} preview`}>{guides ? text : "Loading…"}</pre>

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon, TriangleAlert, X } from "../icons";
 import { api } from "../api";
 import type { GenerationKind, GenerationResult, GenerationTarget } from "../types";
 import { useEscape } from "../useEscape";
@@ -83,7 +84,7 @@ export function GenerateDialog({ pid, branch, aiAvailable, canEdit, toast, onClo
       <div className="modal wide gen-dialog" role="dialog" aria-label="Generate files" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Generate</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         <p className="muted small">Files built from branch <b>{branch}</b>: its components, connections and requirements.
           Check them before you use them.</p>
@@ -117,7 +118,7 @@ export function GenerateDialog({ pid, branch, aiAvailable, canEdit, toast, onClo
             {busy ? "Generating…" : useAi && aiAllowed ? "Generate with AI" : "Regenerate"}</button>
         </div>
 
-        {error && <p className="small" role="alert">⚠ {error}</p>}
+        {error && <p className="small" role="alert"><Icon as={TriangleAlert} size={14} /> {error}</p>}
         {result && (
           <p className="tiny muted">
             {result.engine === "ai" ? "Improved by AI" : "Built-in version"} · {result.files.length} file{result.files.length === 1 ? "" : "s"} ·{" "}
@@ -125,7 +126,7 @@ export function GenerateDialog({ pid, branch, aiAvailable, canEdit, toast, onClo
           </p>
         )}
         {result?.notes.map((n) => <p key={n} className="muted tiny">{n}</p>)}
-        {failed.map((c) => <p key={c.path + c.detail} className="tiny gen-bad">⚠ {c.path}: {c.detail}</p>)}
+        {failed.map((c) => <p key={c.path + c.detail} className="tiny gen-bad"><Icon as={TriangleAlert} size={12} /> {c.path}: {c.detail}</p>)}
 
         {result && result.files.length > 0 && (
           <div className="gen-preview">

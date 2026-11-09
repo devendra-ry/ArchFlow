@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon, RefreshCw } from "../icons";
 import { api } from "../api";
 import type { JiraIssuePreview, JiraPlan, JiraPlanItem, JiraPushResult, JiraSettings, JiraWebhookSetup } from "../types";
 import { Modal } from "./OrgDialogs";
@@ -49,7 +50,7 @@ export function JiraDialog({ pid, branch, defaultKey, aiAvailable, orgId, isAdmi
           <button role="tab" aria-selected={tab === "live"} className={tab === "live" ? "on" : ""} onClick={() => setTab("live")}>Live updates</button>
         </div>
         <button className="small" onClick={sync} disabled={syncing} title="Read the current status of every linked issue from Jira">
-          {syncing ? "Syncing…" : "↻ Sync now"}</button>
+          {syncing ? "Syncing…" : <><Icon as={RefreshCw} size={14} /> Sync now</>}</button>
       </div>
       {error && <p className="error small">{error}</p>}
       {tab === "push" && <PushTab pid={pid} branch={branch} defaultKey={defaultKey} aiAvailable={aiAvailable} onClose={onClose} onChanged={onChanged} />}

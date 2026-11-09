@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
+import { ChevronLeft, Icon, Plus, X } from "../icons";
 import type { Catalog, CatalogItem } from "../types";
-import { TYPE_META } from "./ArchNode";
+import { TYPE_META, TypeIcon } from "./ArchNode";
 
 export const DRAG_MIME = "application/archflow-catalog";
 
@@ -63,7 +64,7 @@ export function Palette({ catalog, startOpen = true, open, onOpenChange, onAdd, 
     if (sheet) return null; // the canvas action bar opens it
     return (
       <button className="palette-toggle" onClick={() => setCollapsed(false)} title="Show components">
-        <span aria-hidden className="palette-toggle-plus">＋</span> Components
+        <span aria-hidden className="palette-toggle-plus"><Icon as={Plus} size={12} /></span> Components
       </button>
     );
   }
@@ -75,7 +76,7 @@ export function Palette({ catalog, startOpen = true, open, onOpenChange, onAdd, 
         <span className="palette-count">{total}</span>
         <span className="grow" />
         <button className="ghost small icon-btn" onClick={() => setCollapsed(true)} aria-label="Hide components" title="Hide">
-          {sheet ? "✕" : "⟨"}
+          {sheet ? <Icon as={X} size={16} /> : <Icon as={ChevronLeft} size={16} />}
         </button>
       </div>
       <div className="palette-head">
@@ -105,7 +106,7 @@ export function Palette({ catalog, startOpen = true, open, onOpenChange, onAdd, 
                 onKeyDown={onAdd ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onAdd(c); } } : undefined}
                 title={`${c.kind_label ? `${c.name} · ${c.kind_label}` : c.name} · ${sheet ? "tap to add" : "drag onto the canvas, or click to add"}`}
                 style={{ ["--accent" as string]: TYPE_META[c.type].color }}>
-                <span className="pi-icon" aria-hidden>{TYPE_META[c.type].glyph}</span>
+                <span className="pi-icon" aria-hidden><TypeIcon type={c.type} size={14} /></span>
                 <span className="pi-text">
                   <span className="pi-name">{c.name}</span>
                   {c.kind_label && c.kind_label !== c.name && <span className="pi-kind">{c.kind_label}</span>}

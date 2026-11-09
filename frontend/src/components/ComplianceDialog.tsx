@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Download, Icon, Printer, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import { Select } from "./Select";
@@ -105,10 +106,10 @@ export function ComplianceDialog({ pid, branch, rev, open, canEdit, aiAvailable,
         <div className="row between wrap">
           <h3>Compliance · {branch}</h3>
           <span className="row gap wrap">
-            <button className="small" onClick={() => exportFile("md")} disabled={!report}>⤓ Markdown</button>
-            <button className="small" onClick={() => exportFile("json")} disabled={!report}>⤓ JSON</button>
-            <button className="small" onClick={printPdf} disabled={!report}>⎙ PDF</button>
-            <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+            <button className="small" onClick={() => exportFile("md")} disabled={!report}><Icon as={Download} size={14} /> Markdown</button>
+            <button className="small" onClick={() => exportFile("json")} disabled={!report}><Icon as={Download} size={14} /> JSON</button>
+            <button className="small" onClick={printPdf} disabled={!report}><Icon as={Printer} size={14} /> PDF</button>
+            <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
           </span>
         </div>
 
