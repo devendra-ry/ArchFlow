@@ -39,6 +39,6 @@ export async function tab(page: Page, name: "Requirements" | "Health" | "History
 }
 
 export async function openTool(page: Page, item: RegExp) {
-  await page.getByRole("button", { name: "Tools ▾" }).click();
+  await page.getByRole("button", { name: "Tools", exact: true }).click();
   await page.getByRole("menuitem", { name: item }).click();
 }

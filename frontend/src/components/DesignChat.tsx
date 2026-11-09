@@ -4,7 +4,7 @@ import type {
   ArchitecturesCard, ArchOption, ArchReview, ChatTurn, Conversation, ConversationMessage, ProjectState, QuestionCard, User,
 } from "../types";
 import { useAiSuggestions } from "../aiSuggestions";
-import { TYPE_META } from "./ArchNode";
+import { TYPE_META, TypeIcon } from "./ArchNode";
 import { Select } from "./Select";
 
 interface Props {
@@ -460,7 +460,7 @@ function ArchitecturesView({ card, disabled, canvasEmpty, onApply }: {
                   {o.components.map((c) => (
                     <span key={c.key} className="comp-chip" style={{ ["--accent" as string]: TYPE_META[c.type]?.color ?? "#888" }}
                       title={c.technology}>
-                      {TYPE_META[c.type]?.glyph} {c.name}
+                      {TYPE_META[c.type] && <TypeIcon type={c.type} size={14} />} {c.name}
                     </span>
                   ))}
                 </div>

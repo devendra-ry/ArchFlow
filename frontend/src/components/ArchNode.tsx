@@ -1,28 +1,38 @@
 import { Handle, NodeToolbar, Position, type NodeProps, type Node } from "@xyflow/react";
 import { memo } from "react";
+import {
+  Bot, Box, BrainCircuit, Component, Database, Globe, HardDrive, ListOrdered, MonitorSmartphone, Network, Plug, Radio, Route, Shield,
+  StickyNote, Table2, Zap, type LucideIcon,
+} from "lucide-react";
 import { brandIcon } from "../brandIcons";
 import type { ArchNode as ArchNodeModel, JiraLink, NodeType } from "../types";
 import { VENDOR_STYLE } from "./Palette";
 
-export const TYPE_META: Record<NodeType, { label: string; color: string; glyph: string }> = {
-  client: { label: "Client", color: "#0090ff", glyph: "▭" },
-  gateway: { label: "Gateway", color: "#6e56cf", glyph: "⇶" },
-  service: { label: "Service", color: "#30a46c", glyph: "◆" },
-  database: { label: "Database", color: "#f76b15", glyph: "⛁" },
-  cache: { label: "Cache", color: "#e5484d", glyph: "⚡" },
-  queue: { label: "Queue", color: "#ffb224", glyph: "☰" },
-  storage: { label: "Storage", color: "#ad7f58", glyph: "▤" },
-  agent: { label: "AI Agent", color: "#d6409f", glyph: "✦" },
-  llm: { label: "LLM", color: "#8e4ec6", glyph: "◎" },
-  mcp: { label: "MCP", color: "#12a594", glyph: "⌘" },
-  external: { label: "External", color: "#8b8d98", glyph: "↗" },
-  security: { label: "Security", color: "#dc3e42", glyph: "⛨" },
-  note: { label: "Note", color: "#ffc53d", glyph: "✎" },
-  component: { label: "Component", color: "#3e63dd", glyph: "▣" },
-  endpoint: { label: "Endpoint", color: "#0d74ce", glyph: "⇢" },
-  table: { label: "Table", color: "#f76b15", glyph: "▦" },
-  event: { label: "Event", color: "#ffb224", glyph: "ϟ" },
+export const TYPE_META: Record<NodeType, { label: string; color: string; glyph: string; icon: LucideIcon }> = {
+  client: { label: "Client", color: "#0090ff", glyph: "▭", icon: MonitorSmartphone },
+  gateway: { label: "Gateway", color: "#6e56cf", glyph: "⇶", icon: Network },
+  service: { label: "Service", color: "#30a46c", glyph: "◆", icon: Box },
+  database: { label: "Database", color: "#f76b15", glyph: "⛁", icon: Database },
+  cache: { label: "Cache", color: "#e5484d", glyph: "⚡", icon: Zap },
+  queue: { label: "Queue", color: "#ffb224", glyph: "☰", icon: ListOrdered },
+  storage: { label: "Storage", color: "#ad7f58", glyph: "▤", icon: HardDrive },
+  agent: { label: "AI Agent", color: "#d6409f", glyph: "✦", icon: Bot },
+  llm: { label: "LLM", color: "#8e4ec6", glyph: "◎", icon: BrainCircuit },
+  mcp: { label: "MCP", color: "#12a594", glyph: "⌘", icon: Plug },
+  external: { label: "External", color: "#8b8d98", glyph: "↗", icon: Globe },
+  security: { label: "Security", color: "#dc3e42", glyph: "⛨", icon: Shield },
+  note: { label: "Note", color: "#ffc53d", glyph: "✎", icon: StickyNote },
+  component: { label: "Component", color: "#3e63dd", glyph: "▣", icon: Component },
+  endpoint: { label: "Endpoint", color: "#0d74ce", glyph: "⇢", icon: Route },
+  table: { label: "Table", color: "#f76b15", glyph: "▦", icon: Table2 },
+  event: { label: "Event", color: "#ffb224", glyph: "ϟ", icon: Radio },
 };
+
+/** The stroked icon for a component type (``glyph`` stays for plain-text contexts such as exports). */
+export function TypeIcon({ type, size = 16 }: { type: NodeType; size?: number }) {
+  const Cmp = (TYPE_META[type] ?? TYPE_META.service).icon;
+  return <Cmp size={size} strokeWidth={1.75} aria-hidden focusable={false} className="type-icon" />;
+}
 
 /** Columns of a table node: "id uuid pk, total numeric" → [{name, type, key}]. */
 export function parseColumns(text: string | undefined) {
@@ -90,7 +100,7 @@ function ArchNodeView({ data, selected, dragging }: NodeProps<ArchFlowNode>) {
           {logo ? (
             <svg className={`an-logo ${logo.dark ? "dark-mark" : ""}`} viewBox="0 0 24 24" role="img" aria-label={logo.title}
               style={{ ["--brand" as string]: logo.hex }}><title>{logo.title}</title><path d={logo.path} /></svg>
-          ) : <span className="an-glyph">{meta.glyph}</span>}
+          ) : <TypeIcon type={model.type} size={16} />}
         </span>
         <div className="an-titles">
           {model.type === "endpoint" ? (

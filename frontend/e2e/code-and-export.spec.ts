@@ -24,7 +24,7 @@ test("connect code: upload a code graph and reconstruct the architecture from it
 test("get the diagram: export PNG, SVG and the interactive HTML", async ({ page }) => {
   await openNewProject(page, `Export ${Date.now()}`, "ai-customer-support");
   for (const [kind, ext, label] of [["png", ".png", "PNG image"], ["svg", ".svg", "SVG image"], ["html", ".html", "Interactive diagram (HTML)"]] as const) {
-    await page.getByRole("button", { name: "Tools ▾" }).click();
+    await page.getByRole("button", { name: "Tools", exact: true }).click();
     const download = page.waitForEvent("download");
     await page.getByRole("group", { name: "Export this diagram" }).getByRole("menuitem", { name: `Export as ${label}` }).click();
     const file = await download;

@@ -1,3 +1,5 @@
+import { ArrowRight, Search } from "lucide-react";
+import { Brand } from "./Logo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { getRecent, pruneRecent, timeAgo } from "../recent";
@@ -127,20 +129,24 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
         <b>{p.name}</b>
         <span className="muted tiny">{meta}</span>
       </span>
-      <span className="project-go" aria-hidden>→</span>
+      <ArrowRight className="project-go" size={16} strokeWidth={2} aria-hidden />
     </button>
   );
 
   return (
     <div className="home">
       <header className="home-bar">
-        <div className="home-brand"><span className="logo">▲</span> ArchFlow</div>
+        <Brand />
         {orgs.length > 0 && (
           <Select className="home-org" value={orgId} onChange={setOrgId} aria-label="Organization"
             options={orgs.map((o) => ({ value: o.id, label: o.name }))} />
         )}
-        <input ref={searchRef} className="home-search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search all projects…   /" aria-label="Search projects" />
+        <label className="search-wrap home-search">
+          <Search size={14} strokeWidth={2} aria-hidden />
+          <input ref={searchRef} className="search" type="search" value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search all projects" aria-label="Search projects" />
+          <kbd aria-hidden>/</kbd>
+        </label>
         <span className="spacer" />
         {themeToggle}
         <UserMenu me={me} user={user} colors={colors} onColor={onColor} onLogout={onLogout} />

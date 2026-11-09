@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { Catalog, CatalogItem } from "../types";
-import { TYPE_META } from "./ArchNode";
+import { TYPE_META, TypeIcon } from "./ArchNode";
 
 export const DRAG_MIME = "application/archflow-catalog";
 
@@ -105,7 +105,7 @@ export function Palette({ catalog, startOpen = true, open, onOpenChange, onAdd, 
                 onKeyDown={onAdd ? (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onAdd(c); } } : undefined}
                 title={`${c.kind_label ? `${c.name} · ${c.kind_label}` : c.name} · ${sheet ? "tap to add" : "drag onto the canvas, or click to add"}`}
                 style={{ ["--accent" as string]: TYPE_META[c.type].color }}>
-                <span className="pi-icon" aria-hidden>{TYPE_META[c.type].glyph}</span>
+                <span className="pi-icon" aria-hidden><TypeIcon type={c.type} size={14} /></span>
                 <span className="pi-text">
                   <span className="pi-name">{c.name}</span>
                   {c.kind_label && c.kind_label !== c.name && <span className="pi-kind">{c.kind_label}</span>}

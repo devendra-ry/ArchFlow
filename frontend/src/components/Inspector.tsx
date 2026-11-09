@@ -1,9 +1,10 @@
+import { MousePointerClick } from "lucide-react";
 import { activeRequirements, NODE_TYPES, type Catalog, type Op, type ProjectState, type StaleLink, type JiraLink } from "../types";
 import { JiraBadge } from "./RequirementsPanel";
 import { VENDOR_STYLE } from "./Palette";
 import { Field } from "./Field";
 import { Select } from "./Select";
-import { TYPE_META } from "./ArchNode";
+import { TYPE_META, TypeIcon } from "./ArchNode";
 import { LldViews } from "./LldViews";
 import { codeUrl } from "./CodeDialog";
 
@@ -79,7 +80,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
     return (
       <div className="inspector">
         <div className="insp-head" style={{ ["--accent" as string]: TYPE_META[n.type].color }}>
-          <span className="an-glyph">{TYPE_META[n.type].glyph}</span> {n.name}
+          <TypeIcon type={n.type} size={14} /> {n.name}
           <span className="muted small mono">{n.id}</span>
         </div>
         <fieldset className="bare" disabled={readOnly}>
@@ -208,21 +209,21 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
 
   return (
     <div className="inspector empty">
+      <div className="insp-empty-icon" aria-hidden><MousePointerClick size={20} strokeWidth={1.75} /></div>
+      <p className="insp-empty-title">Nothing selected</p>
       <p className="muted small">{readOnly ? "Select a component or connection to see its details. You have read-only access."
         : "Select a component or connection to edit it."}</p>
-      {readOnly ? (
-        <ul className="muted small tips">
-          <li>Double-click a component to open its internals.</li>
-          <li>Use Ask to question the architecture, e.g. “What happens if the database fails?”.</li>
-        </ul>
-      ) : (
-        <ul className="muted small tips">
-          <li>Drag components from the palette onto the canvas.</li>
-          <li>Drag from a handle to another component to connect.</li>
-          <li>Shift-drag to box-select; Delete removes.</li>
-          <li>Type commands like “Add Redis between Order Service and Orders DB”.</li>
-        </ul>
-      )}
+      <ul className="tips">
+        {(readOnly ? [
+          ["Double-click", "a component to open its internals"],
+          ["Ask", "questions such as “What happens if the database fails?”"],
+        ] : [
+          ["Drag", "components from the palette onto the canvas"],
+          ["Drag a handle", "to another component to connect them"],
+          ["Shift-drag", "to box-select; Delete removes"],
+          ["Type", "“Add Redis between Order Service and Orders DB”"],
+        ]).map(([k, v]) => <li key={k}><b>{k}</b> <span>{v}</span></li>)}
+      </ul>
     </div>
   );
 }

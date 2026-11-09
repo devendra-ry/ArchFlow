@@ -1,3 +1,5 @@
+import { Check } from "lucide-react";
+import { Brand } from "./Logo";
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { InviteInfo, Me } from "../types";
@@ -83,11 +85,21 @@ export function AuthScreen({ mode, invite, mfaToken, ssoError, onMode, onSignedI
   const back = () => { setError(""); setStep("password"); setCode(""); };
 
   return (
-    <div className="picker auth">
-      <header className="picker-head">
-        <div className="row between"><a className="brand brand-link" href="#/" title="Back to the home page"><span className="logo">▲</span> ArchFlow</a>{themeToggle}</div>
-        <p className="muted">Requirements → Architecture → Canvas → Code. One structured, versioned, collaborative model.</p>
-      </header>
+    <div className="auth">
+      <aside className="auth-aside">
+        <a className="brand-link" href="#/" title="Back to the home page"><Brand /></a>
+        <div className="auth-pitch">
+          <h1>Design the system once. Keep every view of it in sync.</h1>
+          <ul>
+            <li><Check size={16} strokeWidth={2.2} aria-hidden /> Requirements traced to the components that satisfy them</li>
+            <li><Check size={16} strokeWidth={2.2} aria-hidden /> A live canvas your team and AI agents edit together</li>
+            <li><Check size={16} strokeWidth={2.2} aria-hidden /> Versions, branches and decisions, like code</li>
+          </ul>
+        </div>
+        <p className="auth-flow">Requirements → Architecture → Canvas → Code</p>
+      </aside>
+      <main className="auth-main">
+        <div className="auth-top">{themeToggle}</div>
       {step === "code" ? (
         <form className="card auth-card" onSubmit={submitCode}>
           <h2>Enter your code</h2>
@@ -117,7 +129,8 @@ export function AuthScreen({ mode, invite, mfaToken, ssoError, onMode, onSignedI
         </form>
       ) : (
         <form className="card auth-card" onSubmit={submit}>
-          <h2>{mode === "signup" ? "Create your account" : "Sign in"}</h2>
+          <h2>{mode === "signup" ? "Create your account" : "Welcome back"}</h2>
+          <p className="small muted auth-sub">{mode === "signup" ? "Start from a blank canvas or the example project." : "Sign in to your ArchFlow workspace."}</p>
           {info && (
             <p className="small invite-note">
               You're invited to <b>{info.org_name}</b> as <b>{info.role}</b>.
@@ -151,6 +164,7 @@ export function AuthScreen({ mode, invite, mfaToken, ssoError, onMode, onSignedI
           )}
         </form>
       )}
+      </main>
     </div>
   );
 }

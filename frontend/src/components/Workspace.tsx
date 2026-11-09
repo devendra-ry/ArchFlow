@@ -4,6 +4,12 @@ import {
   type Connection, type Edge, type EdgeChange, type NodeChange, type OnDelete,
 } from "@xyflow/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { LucideIcon } from "lucide-react";
+import {
+  ArrowLeft, ArrowLeftRight, BookOpen, ChevronDown, CircleDollarSign, Download, FileCode2, FileText, GitPullRequest, Hammer,
+  HeartPulse, History, Icon, KeyRound, ListChecks, Maximize2, MessageSquare, Plug, Plus, Scale, Search, ShieldCheck, Sparkles,
+  SquareTerminal, Upload, Workflow,
+} from "../icons";
 import { api } from "../api";
 import { useCollab } from "../collab";
 import { useAssistant } from "../assistant";
@@ -66,13 +72,13 @@ interface Props {
 
 const nodeTypes = { arch: ArchNodeComponent };
 type Tab = "chat" | "requirements" | "issues" | "comments" | "versions" | "decisions";
-const TAB_META: Record<Tab, { icon: string; label: string; title: string }> = {
-  chat: { icon: "✦", label: "Assistant", title: "AI assistant: design, edit and ask" },
-  requirements: { icon: "☰", label: "Requirements", title: "What the system must do, and how well" },
-  issues: { icon: "♥", label: "Health", title: "Checks and the AI review of this design" },
-  comments: { icon: "💬", label: "Comments", title: "Discuss components and the design with your team" },
-  versions: { icon: "⟲", label: "History", title: "Saved versions and activity" },
-  decisions: { icon: "⚖", label: "Decisions", title: "Compare drafts and record architecture decisions" },
+const TAB_META: Record<Tab, { icon: LucideIcon; label: string; title: string }> = {
+  chat: { icon: Sparkles, label: "Assistant", title: "AI assistant: design, edit and ask" },
+  requirements: { icon: ListChecks, label: "Requirements", title: "What the system must do, and how well" },
+  issues: { icon: HeartPulse, label: "Health", title: "Checks and the AI review of this design" },
+  comments: { icon: MessageSquare, label: "Comments", title: "Discuss components and the design with your team" },
+  versions: { icon: History, label: "History", title: "Saved versions and activity" },
+  decisions: { icon: Scale, label: "Decisions", title: "Compare drafts and record architecture decisions" },
 };
 const DOCK_KEY = "archflow.chatDock";
 /** A comment thread to open once a workspace loads (set when a notification leads to another project). */
@@ -837,7 +843,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       <header className="topbar">
         <div className="tb-group tb-left">
         <button className="ghost back-btn" onClick={onExit} title="Back to all projects" aria-label="Back to all projects">
-          <span aria-hidden>←</span> <span className="back-label">Projects</span>
+          <Icon as={ArrowLeft} size={16} /> <span className="back-label">Projects</span>
         </button>
         <ProjectSwitcher me={me} current={project} open={switcherOpen} onOpenChange={setSwitcherOpen}
           onOpen={onOpenProject} onHome={onExit} />
@@ -850,7 +856,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
             <button className="small ghost" onClick={() => onBranch("main")} title="Switch back to the main branch">↩ main</button>
           )}
           {readOnly ? null : newBranch === null ? (
-            <button className="small ghost icon-btn" onClick={() => setNewBranch("experiment/")} title="New branch" aria-label="New branch">+</button>
+            <button className="small ghost icon-btn" onClick={() => setNewBranch("experiment/")} title="New branch" aria-label="New branch"><Icon as={Plus} size={14} /></button>
           ) : (
             <form className="row gap" onSubmit={(e) => { e.preventDefault(); createBranch(newBranch.trim(), null); setNewBranch(null); }}>
               <input autoFocus value={newBranch} onChange={(e) => setNewBranch(e.target.value)} aria-label="New branch name" />
@@ -860,9 +866,12 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           )}
         </div>
         </div>
-        <input className="search" type="search" placeholder="Search canvas…" value={search} aria-label="Search the canvas"
-          onChange={(e) => { setSearch(e.target.value); setTraced(null); }}
-          onKeyDown={(e) => e.key === "Enter" && onSearchEnter()} />
+        <label className="search-wrap">
+          <Icon as={Search} size={14} />
+          <input className="search" type="search" placeholder="Search canvas" value={search} aria-label="Search the canvas"
+            onChange={(e) => { setSearch(e.target.value); setTraced(null); }}
+            onKeyDown={(e) => e.key === "Enter" && onSearchEnter()} />
+        </label>
         <div className="spacer" />
         <div className="tb-group tb-right">
         {analysis && (
@@ -882,66 +891,66 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         })()}
         <div className="tools-menu" ref={toolsRef}>
           <button className="small tools-btn" aria-haspopup="menu" aria-expanded={toolsOpen} onClick={() => setToolsOpen((v) => !v)}
-            title="Tools, export and more">Tools ▾</button>
+            title="Tools, export and more">Tools <Icon as={ChevronDown} size={14} /></button>
           {toolsOpen && (
             <div className="tools-pop af-menu" role="menu" aria-label="Tools" onKeyDown={onMenuKeyDown}>
               <div className="af-menu-title">Tools</div>
               {analysis && (
                 <button role="menuitem" className="tb-overflow" onClick={() => { setToolsOpen(false); openPanel("issues"); }}>
-                  <span className="mi-icon" aria-hidden>♥</span>
+                  <span className="mi-icon"><Icon as={HeartPulse} size={16} /></span>
                   <span className="mi-text"><b>Health: {healthText}</b><span className="muted tiny">{analysis.health.traceability}% of requirements traced</span></span></button>
               )}
               <button role="menuitem" className="tb-overflow" onClick={() => { setToolsOpen(false); setPromptFor({ nodeIds: selectedNodeIds, requirementIds: [] }); }}>
-                <span className="mi-icon" aria-hidden>⚙</span>
+                <span className="mi-icon"><Icon as={SquareTerminal} size={16} /></span>
                 <span className="mi-text"><b>Vibe code{selectedNodeIds.length ? ` (${selectedNodeIds.length})` : ""}</b><span className="muted tiny">Hand this design to a coding agent</span></span></button>
               {ai && (
                 <button role="menuitem" className="tb-overflow tb-overflow-ai" disabled={!aiAdmin} onClick={() => { setToolsOpen(false); setAiSettingsOpen(true); }}>
-                  <span className={`mi-icon ${ai.available ? "ok" : "warn"}`} aria-hidden>✦</span>
+                  <span className={`mi-icon ${ai.available ? "ok" : "warn"}`}><Icon as={Sparkles} size={16} /></span>
                   <span className="mi-text"><b>{ai.available ? "AI on" : aiAdmin ? "AI off · set up" : "AI off · templates"}</b><span className="muted tiny">{aiTip}</span></span></button>
               )}
               <div className="tools-sep tb-overflow" />
               <button role="menuitem" onClick={() => { setToolsOpen(false); setCodeOpen(true); }}>
-                <span className="mi-icon" aria-hidden>⟨/⟩</span>
+                <span className="mi-icon"><Icon as={FileCode2} size={16} /></span>
                 <span className="mi-text"><b>Code analysis</b><span className="muted tiny">Reconstruct a repository, check drift and change impact</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setDiagramsOpen(true); }}>
-                <span className="mi-icon" aria-hidden>◫</span>
+                <span className="mi-icon"><Icon as={Workflow} size={16} /></span>
                 <span className="mi-text"><b>Diagrams</b><span className="muted tiny">C4, sequence, ER, deployment and data flow as Mermaid / PlantUML</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setKnowledgeOpen(true); }}>
-                <span className="mi-icon" aria-hidden>❖</span>
+                <span className="mi-icon"><Icon as={BookOpen} size={16} /></span>
                 <span className="mi-text"><b>Knowledge base</b><span className="muted tiny">Ask and search the project documents and meetings, with citations</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setCostsOpen(true); }}>
-                <span className="mi-icon" aria-hidden>$</span>
+                <span className="mi-icon"><Icon as={CircleDollarSign} size={16} /></span>
                 <span className="mi-text"><b>Cost estimate</b><span className="muted tiny">Monthly cost of this architecture, line by line, and ways to save</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setComplianceOpen(true); }}>
-                <span className="mi-icon" aria-hidden>✓</span>
+                <span className="mi-icon"><Icon as={ShieldCheck} size={16} /></span>
                 <span className="mi-text"><b>Compliance</b><span className="muted tiny">SOC 2, HIPAA, GDPR, PCI DSS and ISO 27001 checks on this design</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setGenerateOpen(true); }}>
-                <span className="mi-icon" aria-hidden>⚙</span>
+                <span className="mi-icon"><Icon as={Hammer} size={16} /></span>
                 <span className="mi-text"><b>Generate</b><span className="muted tiny">Terraform, Docker, Kubernetes, tests, SRS, BRD and runbooks</span></span></button>
               {confluence?.connected && can(role, "edit") && (
                 <button role="menuitem" onClick={() => { setToolsOpen(false); setConfluenceOpen(true); }}>
-                  <span className="mi-icon" aria-hidden>⇪</span>
+                  <span className="mi-icon"><Icon as={Upload} size={16} /></span>
                   <span className="mi-text"><b>Publish to Confluence</b><span className="muted tiny">The architecture spec as a page in {confluence.space_key}</span></span></button>
               )}
               {github?.connected && can(role, "edit") && (
                 <button role="menuitem" onClick={() => { setToolsOpen(false); setGithubOpen(true); }}>
-                  <span className="mi-icon" aria-hidden>⎇</span>
+                  <span className="mi-icon"><Icon as={GitPullRequest} size={16} /></span>
                   <span className="mi-text"><b>Push to GitHub</b><span className="muted tiny">Requirements as issues in {github.repo}</span></span></button>
               )}
               <button role="menuitem" onClick={() => { setToolsOpen(false); setConnectOpen(true); }}>
-                <span className="mi-icon" aria-hidden>⌘</span>
+                <span className="mi-icon"><Icon as={Plug} size={16} /></span>
                 <span className="mi-text"><b>Connect AI agents</b><span className="muted tiny">Claude, Codex and others over MCP</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setAccessOpen(true); }}>
-                <span className="mi-icon" aria-hidden>⚿</span>
+                <span className="mi-icon"><Icon as={KeyRound} size={16} /></span>
                 <span className="mi-text"><b>Project access</b><span className="muted tiny">{can(role, "admin") ? "Give people a different role on this project" : "Who can do what on this project"}</span></span></button>
               <button role="menuitem" onClick={() => { setToolsOpen(false); toggleCanvasFull(); }}>
-                <span className="mi-icon" aria-hidden>⛶</span>
+                <span className="mi-icon"><Icon as={Maximize2} size={16} /></span>
                 <span className="mi-text"><b>Full-screen canvas</b><span className="muted tiny">Shortcut: F</span></span></button>
               <div className="tools-sep" />
               {!readOnly && (
                 <div className="tools-field" role="group" aria-label="Convert architecture to another platform"
                   title="Swap every recognised component for its equivalent on another platform">
-                  <span className="tiny muted">{converting ? "Converting…" : "⇄ Convert to another platform"}</span>
+                  <span className="tiny muted">{converting ? "Converting…" : <><Icon as={ArrowLeftRight} size={14} /> Convert to another platform</>}</span>
                   <div className="tools-chips">
                     {([["aws", "AWS"], ["azure", "Azure"], ["gcp", "Google Cloud"], ["oss", "Open source"]] as const).map(([target, name]) => (
                       <button key={target} role="menuitem" className="tools-chip" disabled={converting} aria-label={`Convert to ${name}`}
@@ -952,7 +961,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
               )}
               <div className="tools-field" role="group" aria-label="Export this diagram"
                 title="Export the diagram you are looking at (the system, or a component's internals)">
-                <span className="tiny muted">{exporting ? "Exporting…" : "⤓ Export diagram"}</span>
+                <span className="tiny muted">{exporting ? "Exporting…" : <><Icon as={Download} size={14} /> Export diagram</>}</span>
                 <div className="tools-chips">
                   {([["png", "PNG", "PNG image"], ["svg", "SVG", "SVG image"], ["html", "HTML", "Interactive diagram (HTML)"]] as const).map(([kind, short, name]) => (
                     <button key={kind} role="menuitem" className="tools-chip" disabled={exporting} aria-label={`Export as ${name}`} title={name}
@@ -961,7 +970,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
                 </div>
               </div>
               <button role="menuitem" onClick={() => { setToolsOpen(false); setExportOpen(true); }}>
-                <span className="mi-icon" aria-hidden>⤓</span>
+                <span className="mi-icon"><Icon as={FileText} size={16} /></span>
                 <span className="mi-text"><b>Export spec &amp; agent guides</b><span className="muted tiny">Markdown, PDF, JSON, YAML, CLAUDE.md, AGENTS.md, .cursorrules</span></span></button>
               <div className="tb-overflow tools-theme">
                 <span className="tiny muted">Theme</span>{themeToggle}
@@ -977,7 +986,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         </div>
         <button className="primary vibe-btn" onClick={() => setPromptFor({ nodeIds: selectedNodeIds, requirementIds: [] })}
           title="Turn this design (or the selected components) into a change spec for a coding agent">
-          ⚙ Vibe code{selectedNodeIds.length ? ` (${selectedNodeIds.length})` : ""}
+          <Icon as={SquareTerminal} size={16} /> Vibe code{selectedNodeIds.length ? ` (${selectedNodeIds.length})` : ""}
         </button>
         <NotificationBell refreshKey={notifKey} onOpen={openNotification} />
         <UserMenu me={me} user={user} role={role} onLogout={onLogout} />
@@ -994,21 +1003,28 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           <b>Panels</b>
           <button className="ghost icon-btn" onClick={() => setDrawer(null)} aria-label="Close panels" title="Close">✕</button>
         </div>
-        <nav className="tabs side-tabs" role="tablist" aria-label="Project panels">
+        {/* A vertical rail of panels (labels as tooltips, so none is ever cut off) next to the open panel. */}
+        <nav className="tabs side-tabs" role="tablist" aria-label="Project panels" aria-orientation="vertical">
           {((dock === "left" ? ["chat"] : []).concat(["requirements", "issues", "comments", "versions", "decisions"]) as Tab[]).map((t) => {
             const meta = TAB_META[t];
             const problems = analysis ? analysis.health.issues.errors + analysis.health.issues.warnings : 0;
             const count = t === "requirements" && state ? activeRequirements(state).length : t === "issues" ? problems
               : t === "comments" ? openThreadsCount : 0;
             return (
-              <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)} role="tab" aria-selected={tab === t} title={meta.title}>
-                <span className="tab-icon" aria-hidden>{meta.icon}</span>
+              <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)} role="tab" aria-selected={tab === t}
+                data-tip={meta.label}>
+                <Icon as={meta.icon} size={18} />
                 <span className="tab-label">{meta.label}</span>
                 {count > 0 && <span className={`tab-count ${t === "issues" ? (analysis?.health.issues.errors ? "bad" : "warn") : ""}`}>{count}</span>}
               </button>
             );
           })}
         </nav>
+        <div className="side-panel">
+        <header className="side-head">
+          <h2>{TAB_META[tab]?.label}</h2>
+          <p>{TAB_META[tab]?.title}</p>
+        </header>
         {tab === "chat" && dock === "left" && chatPanel}
         {state && tab === "requirements" && (
           <RequirementsPanel state={state} issues={analysis?.requirement_issues ?? []} traced={traced} onTrace={setTraced} readOnly={readOnly}
@@ -1038,6 +1054,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           <DecisionsPanel pid={pid} branches={branches} user={user} role={role ?? undefined} toast={toast}
             onAdopted={(r) => { refreshMeta(); toast(`Adopted ${r.source} into ${r.branch} (${r.decisionId}) · v${r.version}`); }} />
         )}
+        </div>
       </aside>
 
       <main className="canvas" ref={wrapper} onMouseMove={onMouseMove}
@@ -1068,7 +1085,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
               </>
             )}
           </Controls>
-          <MiniMap position="top-right" pannable zoomable className="canvas-minimap" nodeBorderRadius={6} nodeStrokeWidth={0}
+          <MiniMap position="bottom-left" pannable zoomable className="canvas-minimap" nodeBorderRadius={6} nodeStrokeWidth={0}
+            style={{ width: 168, height: 108 }}
             nodeColor={(n) => TYPE_META[(n.data as { model: ArchNode }).model.type]?.color ?? "#999"} />
           <ViewportPortal>
             {others.filter((c) => c.cursor && (c.cursor.level ?? "") === level).map((c) => (

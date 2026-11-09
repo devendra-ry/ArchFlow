@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ArrowUp, Brain, History, Maximize2, Minimize2, PanelLeft, PanelRight, PictureInPicture2, Plus, type LucideIcon } from "lucide-react";
 import type { Assistant } from "../assistant";
 import type { AiSuggestion, ConversationMessage } from "../types";
 import { Markdown, type EntityLinks } from "./Markdown";
@@ -35,10 +36,11 @@ interface Props {
 
 export type ChatMode = "design" | "command" | "ask";
 export type ChatDock = "left" | "float" | "right";
-const DOCKS: { id: ChatDock; icon: string; label: string }[] = [
-  { id: "left", icon: "◧", label: "Dock left" }, { id: "float", icon: "▭", label: "Float over the canvas" },
-  { id: "right", icon: "◨", label: "Dock right" },
+const DOCKS: { id: ChatDock; icon: LucideIcon; label: string }[] = [
+  { id: "left", icon: PanelLeft, label: "Dock left" }, { id: "float", icon: PictureInPicture2, label: "Float over the canvas" },
+  { id: "right", icon: PanelRight, label: "Dock right" },
 ];
+const ic = (Cmp: LucideIcon, size = 14) => <Cmp size={size} strokeWidth={2} aria-hidden focusable={false} />;
 
 
 function ago(iso: string): string {
@@ -191,7 +193,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
         <div className="dock-switch" role="group" aria-label="Assistant position">
           {DOCKS.map((d) => (
             <button key={d.id} type="button" className={`ghost tiny-btn ${dock === d.id ? "on" : ""}`} title={d.label} aria-label={d.label}
-              aria-pressed={dock === d.id} onClick={() => onDock(d.id)}>{d.icon}</button>
+              aria-pressed={dock === d.id} onClick={() => onDock(d.id)}>{ic(d.icon)}</button>
           ))}
         </div>
       )}
@@ -258,7 +260,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
             <button className="ghost tiny-btn" disabled={a.busy} title="Remove every message in this conversation"
               onClick={() => { if (window.confirm("Clear this conversation for everyone?")) a.clear(); }}>Clear</button>
           )}
-          <button className="ghost tiny-btn" onClick={() => { a.open(null); inputRef.current?.focus(); }} disabled={a.busy}>+ New chat</button>
+          <button className="ghost tiny-btn" onClick={() => { a.open(null); inputRef.current?.focus(); }} disabled={a.busy}>{ic(Plus, 12)} New chat</button>
           {!full && !docked && <button className="ghost tiny-btn" onClick={() => setTall(!tall)} title={tall ? "Smaller" : "Taller"}>{tall ? "⤓" : "⤒"}</button>}
         </div>
       )}
@@ -324,14 +326,14 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
             : a.messages.length ? "Ask a follow-up…" : suggestions[0] ? `Ask about the project, e.g. “${suggestions[0].label}”` : "Ask about the project…"}
         />
         <datalist id="cmd-suggestions">{suggestions.map((s) => <option key={s.label} value={s.prompt} />)}</datalist>
-        <button className="primary" disabled={!text.trim() || a.busy}>{mode === "command" ? "Apply" : "Ask"}</button>
+        <button className="primary" disabled={!text.trim() || a.busy}>{mode === "command" ? "Apply" : "Ask"} {ic(ArrowUp)}</button>
         <button type="button" className={`ghost ${history ? "on" : ""}`} onClick={() => { setHistory(!history); a.refreshThreads(); }}
-          title="Conversation history" aria-label="Conversation history">☰</button>
+          title="Conversation history" aria-label="Conversation history">{ic(History, 16)}</button>
         <button type="button" className={`ghost ${full ? "on" : ""}`} onClick={() => setFull(!full)}
           title={full ? "Exit full screen (Esc)" : "Full screen"} aria-label={full ? "Exit full screen" : "Full screen"}
-          aria-pressed={full}>⛶</button>
+          aria-pressed={full}>{ic(full ? Minimize2 : Maximize2, 16)}</button>
         <button type="button" className="ghost mem-btn" onClick={onOpenMemory}
-          title="Project memory: facts every AI answer, edit and design takes into account">◎ {memoryCount}</button>
+          title="Project memory: facts every AI answer, edit and design takes into account">{ic(Brain, 16)} {memoryCount}</button>
       </form>
       {aiBusy && <div className="ai-busy small">✦ {aiBusy}</div>}
     </div>
