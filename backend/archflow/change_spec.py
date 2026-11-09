@@ -367,7 +367,7 @@ def agent_prompt(change_id: str, files: dict[str, str], target: str) -> str:
     body = []
     for f in order:
         if f in files:
-            body += [f"---", f"## File: openspec/changes/{change_id}/{f}", "", files[f].strip(), ""]
+            body += ["---", f"## File: openspec/changes/{change_id}/{f}", "", files[f].strip(), ""]
     return "\n".join(head + body).strip() + "\n"
 
 

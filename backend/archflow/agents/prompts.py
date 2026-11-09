@@ -115,12 +115,6 @@ def _all() -> dict[str, dict[str, Any]]:
         return _cache
 
 
-def reload() -> None:
-    """Forget the parsed files (tests, or after editing prompts in a running dev server)."""
-    with _lock:
-        _cache.clear()
-
-
 def overrides() -> dict[str, str]:
     """``ARCHFLOW_PROMPTS`` as {prompt id: version}."""
     out: dict[str, str] = {}

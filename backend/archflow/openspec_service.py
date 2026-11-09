@@ -53,7 +53,6 @@ CLI = TOOL_DIR / "node_modules" / "@fission-ai" / "openspec" / "bin" / "openspec
 TIMEOUT = int(os.environ.get("ARCHFLOW_OPENSPEC_TIMEOUT", "90"))
 MAX_REPAIRS = 2
 MAX_FILE_CHARS = 200_000
-ROOT = "openspec/"
 ENV = {"OPENSPEC_TELEMETRY": "0", "DO_NOT_TRACK": "1", "OPENSPEC_NO_UPDATE_CHECK": "1", "CI": "1", "NO_COLOR": "1",
        "FORCE_COLOR": "0"}
 CHANGE_ID_RE = re.compile(r"^[a-z][a-z0-9-]{2,63}$")

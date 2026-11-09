@@ -1144,17 +1144,24 @@ class Store:
                                    version=version, kind=kind, actor_name=actor_name, preview=preview[:200],
                                    created_at=now()))
 
+    @staticmethod
+    def _visible_notifications(user_id: str):
+        """The user's notifications on projects in orgs they still belong to (removed members keep their rows, but
+        must not see them, nor have them counted as unread with no way to open or clear them)."""
+        return (select(Notification).join(Project, Project.id == Notification.project_id)
+                .join(Membership, (Membership.org_id == Project.org_id) & (Membership.user_id == user_id))
+                .where(Notification.user_id == user_id))
+
     def list_notifications(self, user_id: str, limit: int = 50) -> list[dict[str, Any]]:
+        q = (self._visible_notifications(user_id).add_columns(Project.name)
+             .order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit))
         with self._s() as s:
-            rows = s.execute(select(Notification, Project.name).join(Project, Project.id == Notification.project_id)
-                             .where(Notification.user_id == user_id)
-                             .order_by(Notification.created_at.desc(), Notification.id.desc()).limit(limit))
-            return [{**n.to_dict(*NOTIFICATION_COLS), "project_name": name} for n, name in rows]
+            return [{**n.to_dict(*NOTIFICATION_COLS), "project_name": name} for n, name in s.execute(q)]
 
     def count_unread_notifications(self, user_id: str) -> int:
+        q = self._visible_notifications(user_id).where(Notification.read == False)  # noqa: E712
         with self._s() as s:
-            return s.scalar(select(func.count()).select_from(Notification)
-                            .where(Notification.user_id == user_id, Notification.read == False)) or 0  # noqa: E712
+            return s.scalar(select(func.count()).select_from(q.subquery())) or 0
 
     def mark_notifications_read(self, user_id: str, ids: list[int] | None = None) -> int:
         """Mark the given notifications (default: all of them) read; returns how many changed."""

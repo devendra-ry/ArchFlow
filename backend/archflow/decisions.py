@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from . import approvals
 from . import evaluation as evaluation_mod
 from . import history, llm
-from .models import ProjectState
+from .models import ProjectState, keep_requirement_seq
 from .store import DECISION_STATUSES
 
 LOG_BRANCH = "main"
@@ -188,7 +188,7 @@ def chosen_branch(store: Any, pid: str, decision: dict[str, Any]) -> str | None:
 
 def with_bumped_revs(new: ProjectState, current: ProjectState) -> ProjectState:
     """Copy of ``new`` whose revisions all follow ``current`` (keeps conflict detection valid), as restore does."""
-    out = new.model_copy(deep=True)
+    out = keep_requirement_seq(new.model_copy(deep=True), current)
     out.rev = current.rev + 1
     for coll in (out.nodes, out.edges, out.requirements):
         for item in coll.values():

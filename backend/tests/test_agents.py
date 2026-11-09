@@ -7,6 +7,7 @@ os.environ.setdefault("ARCHFLOW_DB", ":memory:")
 os.environ["ARCHFLOW_AI"] = "offline"
 
 import pytest  # noqa: E402
+from jinja2 import UndefinedError
 from authhelp import new_client, signup  # noqa: E402
 
 from archflow import agents, llm, suggestions  # noqa: E402
@@ -55,7 +56,7 @@ def test_changing_a_locked_prompt_is_detected(monkeypatch):
 def test_templates_are_strict():
     p = prompts.get("memory.summarize")
     assert "<new_turns>\nhello\n</new_turns>" in p.render_user(summary="(none)", turns="hello")
-    with pytest.raises(Exception):
+    with pytest.raises(UndefinedError, match="turns"):
         p.render_user(summary="(none)")  # a missing variable is an error, not an empty string
 
 

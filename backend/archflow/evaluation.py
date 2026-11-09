@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import re
 from typing import Any
 
@@ -40,7 +39,6 @@ from .models import ProjectState, active_requirements
 
 log = logging.getLogger("archflow.evaluation")
 
-ENGINES = ("llm", "heuristic")
 
 # Criterion -> what a 5 means. Every scale is "higher is better" (cost 5 = cheapest).
 CRITERIA: dict[str, str] = {

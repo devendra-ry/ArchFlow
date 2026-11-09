@@ -46,7 +46,6 @@ IMPORT_FIELDS = ["summary", "description", "issuetype", "priority", "labels", "s
 MAX_IMPORT = 50
 MAX_PAGE = 50
 AI_BATCH = 10
-DELETED = "Deleted in Jira"
 
 NFR_LABELS = {"nfr", "non-functional", "nonfunctional", "non_functional", "quality", "quality-attribute",
               "quality-requirement"}
@@ -229,11 +228,6 @@ def blocks_text(blocks: list[tuple[str, str]]) -> str:
             lines.append("")
         lines.append("---" if kind == "rule" else text.rstrip())
     return "\n".join(lines).strip()
-
-
-def adf_to_text(doc: Any) -> str:
-    """Plain text of a Jira description: paragraphs, headings, "- " list items, code and tables."""
-    return blocks_text(adf_blocks(doc))
 
 
 def split_criteria(blocks: list[tuple[str, str]]) -> tuple[str, list[str]]:

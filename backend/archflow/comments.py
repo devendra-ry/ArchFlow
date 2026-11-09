@@ -132,15 +132,12 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
     # ---- your notifications (mentions and replies), across every project ----
     @app.get("/api/notifications")
     def list_notifications(limit: int = Query(30, ge=1, le=100), user: dict = Depends(authz.current_user)):
-        visible = [n for n in store.list_notifications(user["id"], limit)
-                   if store.get_role(_org_of(n["project_id"]), user["id"])]
-        return {"items": visible, "unread": store.count_unread_notifications(user["id"])}
+        # Only projects in orgs the user still belongs to (filtered in the query, so the page is full and the
+        # unread count matches what the user can see).
+        return {"items": store.list_notifications(user["id"], limit), "unread": store.count_unread_notifications(user["id"])}
 
     @app.post("/api/notifications/read")
     def read_notifications(body: ReadIn, user: dict = Depends(authz.current_user)):
         store.mark_notifications_read(user["id"], body.ids)
         return {"unread": store.count_unread_notifications(user["id"])}
 
-    def _org_of(pid: str) -> str:
-        p = store.get_project(pid)
-        return p["org_id"] if p else ""

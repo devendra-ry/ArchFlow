@@ -294,17 +294,13 @@ def test_complete_tools_parses_arguments(monkeypatch, all_keys):
         tool_call("connect_components", {"source": "API", "target": "Redis"}),
         tool_call("broken", "{not json"),
     ])]})
-    text, calls = llm.complete_tools("sys", [{"role": "user", "content": "x"}], ai.TOOLS)
+    tools = [{"type": "function", "function": {"name": n, "description": n, "parameters": {"type": "object", "properties": {}}}}
+             for n in ("add_component", "connect_components")]
+    text, calls = llm.complete_tools("sys", [{"role": "user", "content": "x"}], tools)
     assert text == "Added a cache."
     assert calls == [{"name": "add_component", "arguments": {"name": "Redis", "type": "cache"}},
                      {"name": "connect_components", "arguments": {"source": "API", "target": "Redis"}}]
-    assert router.calls[0]["tools"] == ai.TOOLS and router.calls[0]["tool_choice"] == "auto"
-
-
-def test_ai_tools_are_openai_format():
-    names = [t["function"]["name"] for t in ai.TOOLS]
-    assert "add_component" in names and "ask_clarifying_questions" in names
-    assert all(t["type"] == "function" and t["function"]["parameters"]["type"] == "object" for t in ai.TOOLS)
+    assert router.calls[0]["tools"] == tools and router.calls[0]["tool_choice"] == "auto"
 
 
 def test_ai_llm_command_maps_tool_calls(monkeypatch, all_keys):

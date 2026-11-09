@@ -129,7 +129,7 @@ def test_adf_to_text_and_acceptance_criteria():
         para("Given a signed-in customer, when they click Export, then a file downloads"),
         {"type": "mediaSingle", "content": [{"type": "media", "attrs": {"id": "x"}}]},
     )
-    text = jira_sync.adf_to_text(doc)
+    text = jira_sync.blocks_text(jira_sync.adf_blocks(doc))
     assert "Line one\nline two @Ana" in text
     assert "- CSV has one row per order" in text and "- first" in text and "GET /orders.csv" in text
     assert "---" in text and "a | b" in text
@@ -140,7 +140,7 @@ def test_adf_to_text_and_acceptance_criteria():
     # Jira wiki text (older API versions) works too
     wiki = "h3. Acceptance criteria\n* works offline\n* syncs later\nh3. Other\nplain"
     assert jira_sync.split_criteria(jira_sync.adf_blocks(wiki)) == ("Other\n\nplain", ["works offline", "syncs later"])
-    assert jira_sync.adf_to_text(None) == "" and jira_sync.adf_to_text({"type": "doc", "content": []}) == ""
+    assert all(jira_sync.blocks_text(jira_sync.adf_blocks(empty)) == "" for empty in (None, {"type": "doc", "content": []}))
 
 
 def test_issue_mapping_rules():

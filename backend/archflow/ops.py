@@ -38,7 +38,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .models import PROTECTED_FIELDS, Edge, Node, ProjectState, Requirement
+from .models import PROTECTED_FIELDS, Edge, Node, ProjectState, Requirement, requirement_number
 
 REVIEWED = "reviewed:"  # node.field_revs key prefix: revision at which a linked requirement was last reviewed
 
@@ -96,8 +96,10 @@ def new_edge_id(state: ProjectState) -> str:
 
 
 def next_requirement_id(state: ProjectState) -> str:
-    nums = [int(m.group(1)) for rid in state.requirements if (m := re.match(r"REQ-(\d+)$", rid))]
-    return f"REQ-{(max(nums) if nums else 0) + 1:03d}"
+    """The next REQ-n, past every id present and every id ever issued (``requirement_seq``), so a purged id is never
+    reused."""
+    highest = max([state.requirement_seq, *(requirement_number(rid) for rid in state.requirements)])
+    return f"REQ-{highest + 1:03d}"
 
 
 def resolve_node(state: ProjectState, ref: str | None) -> Node | None:
@@ -319,7 +321,10 @@ def apply_ops(state: ProjectState, ops: list[dict[str, Any]]) -> tuple[ProjectSt
             raw.update(source=src.id, target=tgt.id, rev=new_rev)
             if not raw.get("id") or raw["id"] in st.edges:
                 raw["id"] = new_edge_id(st)
-            edge = Edge.model_validate(raw)
+            try:
+                edge = Edge.model_validate(raw)
+            except ValidationError as exc:
+                raise OpError(f"invalid connection: {exc.errors()[0]['loc']} {exc.errors()[0]['msg']}") from exc
             edge.field_revs = {f: new_rev for f in Edge.model_fields if f not in PROTECTED_FIELDS}
             st.edges[edge.id] = edge
             summary.append(f"connected '{src.name}' → '{tgt.name}'" + (f" ({edge.protocol})" if edge.protocol else ""))
@@ -370,6 +375,7 @@ def apply_ops(state: ProjectState, ops: list[dict[str, Any]]) -> tuple[ProjectSt
                 raise OpError(f"invalid requirement: {exc.errors()[0]['loc']} {exc.errors()[0]['msg']}") from exc
             req.field_revs = {f: new_rev for f in Requirement.model_fields if f not in PROTECTED_FIELDS}
             st.requirements[req.id] = req
+            st.requirement_seq = max(st.requirement_seq, requirement_number(req.id))
             summary.append(f"added {req.id} '{req.title}'")
 
         elif kind == "update_requirement":

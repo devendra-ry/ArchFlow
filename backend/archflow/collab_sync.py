@@ -24,7 +24,7 @@ import httpx
 from pydantic import ValidationError
 
 from .diff import diff_states
-from .models import NODE_TYPES, Edge, Node, ProjectState, Requirement
+from .models import NODE_TYPES, Edge, Node, ProjectState, Requirement, keep_requirement_seq
 
 log = logging.getLogger("archflow.collab")
 
@@ -154,7 +154,7 @@ def merge_projection(current: ProjectState, incoming: ProjectState) -> tuple[Pro
     if not patch:
         return current, []
     new_rev = current.rev + 1
-    merged = incoming.model_copy(deep=True)
+    merged = keep_requirement_seq(incoming.model_copy(deep=True), current)  # the live document doesn't carry it
     merged.rev = new_rev
     for coll in COLLECTIONS:
         prev = getattr(current, coll)

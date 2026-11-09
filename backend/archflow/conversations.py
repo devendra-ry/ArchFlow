@@ -502,7 +502,7 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
     @app.post("/api/projects/{pid}/conversations/{cid}/regenerate")
     async def regenerate(pid: str, cid: str, background: BackgroundTasks, branch: str = "main", a=Depends(read)):
         """Answer the last question again (replaces the last answer)."""
-        conv = conv_or_404(pid, cid)
+        conv_or_404(pid, cid)
         state_or_404(pid, branch)
         msgs = store.list_messages(cid)
         last_q = next((m for m in reversed(msgs) if m["role"] == "user"), None)

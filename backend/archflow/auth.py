@@ -263,7 +263,7 @@ def consent_page(req: dict[str, Any], request_id: str, orgs: list[dict[str, Any]
   <label>Organization<select name="org_id" required>{org_opts}</select></label>
   <label>Access</label>
   <div class="radio"><input type="radio" name="access" value="read" id="r" {'' if can_write else 'checked'}><label for="r" style="margin:0;color:inherit">Read only: view architectures, requirements, versions and coding briefs</label></div>
-  {f'<div class="radio"><input type="radio" name="access" value="write" id="w" checked><label for="w" style="margin:0;color:inherit">Read and edit: change the canvas, commit versions, report task progress</label></div>' if can_write else ''}
+  {'<div class="radio"><input type="radio" name="access" value="write" id="w" checked><label for="w" style="margin:0;color:inherit">Read and edit: change the canvas, commit versions, report task progress</label></div>' if can_write else ''}
   {write_note}
   <div class="actions"><button type="submit" name="decision" value="deny">Deny</button>
   <button class="primary" type="submit" name="decision" value="approve">Allow access</button></div>

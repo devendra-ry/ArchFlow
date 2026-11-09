@@ -41,7 +41,7 @@ from pydantic import BaseModel, Field, ValidationError
 from . import agents, llm
 from .collab_sync import state_patch
 from .diff import diff_states, diff_to_text
-from .models import Edge, Node, ProjectState, Requirement
+from .models import Edge, Node, ProjectState, Requirement, keep_requirement_seq
 from .ops import next_requirement_id
 
 log = logging.getLogger("archflow.merge")
@@ -175,7 +175,7 @@ class _Merger:
         self.res = resolutions or {}
         self.names = {**{k: n.name for k, n in base.nodes.items()}, **{k: n.name for k, n in theirs.nodes.items()},
                       **{k: n.name for k, n in ours.nodes.items()}}
-        self.out = MergeResult(state=ProjectState(rev=ours.rev))
+        self.out = MergeResult(state=keep_requirement_seq(ProjectState(rev=ours.rev), base, ours, theirs))
 
     # -- resolutions
     def _pick(self, cid: str, ours: Any, theirs: Any, allow_custom: bool = True) -> Any:
@@ -258,7 +258,9 @@ class _Merger:
     # -- requirement ids both sides added
     def _renumber(self) -> ProjectState:
         theirs = self.theirs.model_copy(deep=True)
-        taken = ProjectState(requirements={**self.base.requirements, **self.ours.requirements, **theirs.requirements})
+        taken = keep_requirement_seq(
+            ProjectState(requirements={**self.base.requirements, **self.ours.requirements, **theirs.requirements}),
+            self.base, self.ours, theirs)
         renames: dict[str, str] = {}
         for rid, req in list(theirs.requirements.items()):
             mine = self.ours.requirements.get(rid)

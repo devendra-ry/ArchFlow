@@ -122,9 +122,6 @@ _TOOL_DEFS: list[dict[str, Any]] = [
     },
 ]
 
-# OpenAI function-calling format (LiteLLM translates it for Gemini and Claude).
-TOOLS: list[dict[str, Any]] = [{"type": "function", "function": t} for t in _TOOL_DEFS]
-
 # The system prompts live in archflow/prompts/ (canvas.command, assistant.ask), versioned; see agents.prompts.
 COMMAND_PROMPT = "canvas.command"  # v2: clarifying questions with answer options
 ASK_PROMPT = "assistant.ask"

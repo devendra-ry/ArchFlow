@@ -66,6 +66,19 @@ def test_threads_replies_and_mentions(team):
     assert not any(not x["read"] for x in dev.get("/api/notifications").json()["items"])
 
 
+def test_removed_members_neither_see_nor_count_notifications_from_that_org(team):
+    """The unread count used to include notifications the list hid, leaving a removed member with a badge they could
+    never open or clear; the list was also cut to the limit before hiding rows, so it could come back short."""
+    owner, dev, pid, ids = team["owner"], team["dev"], team["pid"], team["ids"]
+    for i in range(3):
+        owner.post(f"/api/projects/{pid}/comments", json={"body": f"@Dev ping {i}", "target_type": "project",
+                                                          "mentions": [ids["Dev"]]})
+    assert dev.get("/api/notifications").json()["unread"] == 3
+    assert owner.delete(f"/api/orgs/org-default/members/{ids['Dev']}").status_code == 204
+    after = dev.get("/api/notifications").json()
+    assert after == {"items": [], "unread": 0}
+
+
 def test_edit_resolve_delete_permissions(team):
     owner, dev, reviewer, viewer, pid = team["owner"], team["dev"], team["reviewer"], team["viewer"], team["pid"]
     c = reviewer.post(f"/api/projects/{pid}/comments", json={"body": "General question"}).json()

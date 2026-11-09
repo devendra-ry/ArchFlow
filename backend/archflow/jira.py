@@ -63,7 +63,6 @@ from .models import Node, ProjectState, Requirement
 log = logging.getLogger("archflow.jira")
 
 PROMPT = "jira.stories"
-SYSTEM = "jira"
 PLAN_VERSION = "1"  # part of every content hash: bump it when the pushed fields change shape
 FIB = (1, 2, 3, 5, 8, 13)
 PROJECT_KEY_RE = re.compile(r"^[A-Z][A-Z0-9_]{1,9}$")

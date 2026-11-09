@@ -148,11 +148,6 @@ export interface Activity { actor: string; summary: string[]; rev: number; creat
 
 export type Op = Record<string, unknown> & { op: string };
 
-export interface Conflict {
-  kind: string; id: string; name: string | null; field: string;
-  theirs: unknown; yours: unknown; base_rev: number; changed_at_rev: number;
-}
-
 export interface Issue {
   severity: "error" | "warning" | "info";
   code: string; message: string; suggestion: string;
@@ -209,7 +204,6 @@ export interface MergeResult {
 }
 
 export interface User { name: string; color: string }
-export interface PresenceUser extends User { client_id: number }
 
 // ---- guided design chat ----
 export interface ChatOption { id: string; label: string; description: string; recommended?: boolean }

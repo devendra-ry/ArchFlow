@@ -17,7 +17,7 @@ from archflow import collab_sync, llm, secrets_box, users  # noqa: E402
 from archflow.main import create_app  # noqa: E402
 from archflow.store import DEFAULT_ORG_ID, Store  # noqa: E402
 
-from authhelp import PASSWORD, authed_client, login, member_client, new_client, signup, ws_headers  # noqa: E402
+from authhelp import PASSWORD, authed_client, member_client, new_client, signup, ws_headers  # noqa: E402
 
 TEST_SECRET = "test-only-secret-key-not-for-production"
 

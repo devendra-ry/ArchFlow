@@ -33,7 +33,7 @@ from .merge import register_routes as register_merge_routes
 from .authz import ROLES, Access, Authz, CSRFMiddleware, can, cap_scopes
 from .diff import diff_states, diff_to_text
 from .mcp_remote import Services, build_remote_mcp
-from .models import ProjectState
+from .models import ProjectState, keep_requirement_seq
 from .ops import ConflictError, OpError, apply_ops, resolve_node, unique_slug
 from .store import Store, default_store
 from .templates import TEMPLATES, build_template
@@ -397,7 +397,7 @@ def create_app(store: Store | None = None) -> FastAPI:
         with store.transaction(pid, branch) as current:
             if current is None:
                 raise HTTPException(404, f"branch '{branch}' not found")
-            restored = v["state"].model_copy(deep=True)
+            restored = keep_requirement_seq(v["state"].model_copy(deep=True), current)  # never reissue a purged id
             restored.rev = current.rev + 1  # keep revisions monotonic so conflict detection stays valid
             for coll in (restored.nodes, restored.edges, restored.requirements):
                 for item in coll.values():

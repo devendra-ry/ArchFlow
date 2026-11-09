@@ -97,6 +97,23 @@ class ProjectState(BaseModel):
     nodes: dict[str, Node] = Field(default_factory=dict)
     edges: dict[str, Edge] = Field(default_factory=dict)
     requirements: dict[str, Requirement] = Field(default_factory=dict)
+    # Highest REQ-n ever issued on this branch. It never goes down, so a permanently removed requirement's id is not
+    # handed out again: its history rows and Jira/GitHub links are keyed by that id and would attach to the new one.
+    requirement_seq: int = 0
+
+
+def requirement_number(rid: str) -> int:
+    """n for "REQ-n", else 0."""
+    head, _, num = rid.partition("-")
+    return int(num) if head == "REQ" and num.isdigit() else 0
+
+
+def keep_requirement_seq(new: ProjectState, *previous: ProjectState) -> ProjectState:
+    """Set ``new.requirement_seq`` to the highest of its own, ``previous`` states' and every id present (in place).
+    For code that replaces a branch's state wholesale (restore, adopt, merge, the collab projection)."""
+    new.requirement_seq = max([new.requirement_seq, *(p.requirement_seq for p in previous),
+                               *(requirement_number(r) for s in (new, *previous) for r in s.requirements)], default=0)
+    return new
 
 
 # Fields that clients may not set directly through an update op.
