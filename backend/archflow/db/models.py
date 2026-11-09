@@ -159,7 +159,8 @@ class Version(Base):
     number: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=False)
     branch: Mapped[str] = mapped_column(Text, nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    author: Mapped[str] = mapped_column(Text, nullable=False)
+    author: Mapped[str] = mapped_column(Text, nullable=False)  # display name, for listings
+    author_id: Mapped[str | None] = mapped_column(Text)  # who saved it (user id); None for system snapshots and old rows
     parent: Mapped[int | None] = mapped_column(Integer)
     state_json: Mapped[ProjectState] = mapped_column(StateJSON, nullable=False)
     created_at: Mapped[str] = created()
@@ -238,6 +239,9 @@ class ApiToken(Base):
     expires_at: Mapped[float | None] = mapped_column(Double)
     last_used_at: Mapped[str | None] = mapped_column(UTCDateTime)
     revoked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # How the user had signed in when the token was granted: "password" or "sso:<org_id>" (None: before this was
+    # recorded, treated as "password"). MCP calls apply the org's require-SSO rule to it, as the web does to sessions.
+    auth_method: Mapped[str | None] = mapped_column(Text)
 
 
 # --------------------------------------------------------------------------- decisions, code graphs

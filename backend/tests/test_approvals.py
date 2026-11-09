@@ -238,3 +238,31 @@ def test_mcp_approval_status():
         assert out["result"][0]["review"]["status"] == "approved"
         err, _, _ = tool(client, at, "get_approval_status", project_id=pid, version=99)
         assert err
+
+
+def test_self_approval_is_by_user_not_display_name(app, team):
+    """The rule compared display names: a namesake was blocked, and a version saved over MCP ("<name> via MCP") could
+    be approved by the person who saved it."""
+    owner, arch, pid = team["owner"], team["arch"], team["pid"]
+    twin = member_client(app, owner, "reviewer", "arch-twin@example.com", "Arch")  # same display name, another person
+    n = save(arch, pid)
+    act(arch, pid, n, "request-review")
+    assert act(twin, pid, n, "approve").status_code == 200
+
+
+def test_a_version_saved_over_mcp_cannot_be_approved_by_its_author():
+    from authhelp import new_client, signup
+    from test_mcp_remote import BASE, oauth_login, tool
+
+    with new_client(create_app(Store(":memory:")), base_url=BASE) as client:
+        signup(client)
+        member_client(client.app, client, "owner", "owner2@example.com", "Owner Two")  # not the only owner any more
+        arch = member_client(client.app, client, "architect", "arch@example.com", "Arch")
+        pid = client.post("/api/projects", json={"name": "Shop", "template": "blank"}).json()["id"]
+        _, tokens = oauth_login(arch)
+        err, out, text = tool(arch, tokens["access_token"], "commit_version", project_id=pid, message="From my agent")
+        assert not err, text
+        n = arch.get(f"/api/projects/{pid}/versions").json()[0]["number"]
+        act(arch, pid, n, "request-review")
+        r = act(arch, pid, n, "approve")
+        assert r.status_code == 403 and "someone else" in r.json()["detail"]

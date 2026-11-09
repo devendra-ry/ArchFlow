@@ -143,7 +143,10 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
                     raise HTTPException(409, f"v{number} is {LABELS[status]}; only a version in review can be "
                                              + ("approved." if action == "approve" else "sent back for changes."))
             if action == "approve":
-                if v["author"] == a.user["name"] and not (a.role == "owner" and store.count_role(a.org_id, "owner") == 1):
+                # By user id: names are not unique, and a version saved over MCP is "<name> via MCP". Older rows
+                # without an id fall back to the name.
+                mine = v["author_id"] == me if v.get("author_id") else v["author"] in (a.user["name"], f"{a.user['name']} via MCP")
+                if mine and not (a.role == "owner" and store.count_role(a.org_id, "owner") == 1):
                     raise HTTPException(403, "You saved this version, so someone else has to approve it.")
                 if any(x["id"] == me for x in before["approvals"]):
                     raise HTTPException(409, f"You already approved v{number}.")

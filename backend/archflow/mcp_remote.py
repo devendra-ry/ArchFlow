@@ -69,6 +69,13 @@ class Principal:
         role = store.get_role(self.org_id, self.user_id) if self.user_id else None
         if role is None:
             raise ToolError("This connection's user is no longer a member of the organization.")
+        # The org's sign-in rules apply to agents too, as to browser sessions: require two-step sign-in, and require
+        # SSO (a token granted from a password session, or before the method was recorded, does not count).
+        blocked = authz.Authz(store).policy_block(
+            {"id": self.user_id, "auth_method": claims.get("auth_method") or "password"}, self.org_id, role)
+        if blocked:
+            raise ToolError(blocked.replace("Sign out, then use Sign in with SSO.",
+                                            "Reconnect this app after signing in to ArchFlow with SSO."))
         account = store.get_user(self.user_id) or {}
         self.role = role
         self.user: str = account.get("name") or claims.get("user_name") or "agent"
@@ -497,7 +504,7 @@ def build_remote_mcp(services: Services) -> MCPServer:
         p = Principal(store)
         p.require_write()
         project_for(p, project_id, branch)
-        v = await services.commit_version(project_id, branch, message, p.actor)
+        v = await services.commit_version(project_id, branch, message, p.actor, p.user_id)
         return {"version": v["number"], "branch": branch, "message": message}
 
     @mcp.tool()

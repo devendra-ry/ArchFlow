@@ -96,7 +96,7 @@ AUTH_SETTINGS_COLS = ("org_id", "sso_enabled", "issuer", "client_id", "ciphertex
                       "require_sso", "require_mfa", "updated_by", "updated_at")
 AUTH_SETTINGS_FIELDS = AUTH_SETTINGS_COLS[1:-2]
 TOKEN_COLS = ("id", "kind", "org_id", "user_name", "user_id", "scopes", "client_id", "name", "resource",
-              "created_at", "expires_at", "last_used_at", "revoked")
+              "created_at", "expires_at", "last_used_at", "revoked", "auth_method")
 
 
 def code_graph_id() -> str:
@@ -727,15 +727,18 @@ class Store:
             s.add(Branch(project_id=pid, name=name, state_json=state, base_version=base_version, created_at=now()))
 
     # ---- versions -------------------------------------------------------
-    def commit(self, pid: str, branch: str, message: str, author: str, state: ProjectState) -> dict[str, Any]:
+    def commit(self, pid: str, branch: str, message: str, author: str, state: ProjectState,
+               author_id: str | None = None) -> dict[str, Any]:
+        """Save ``state`` as the next version. ``author`` is the display name; ``author_id`` the user who saved it
+        (None for system snapshots), which the self-approval rule compares."""
         with self._s() as s:
             self._lock_row(s, select(Project.id).where(Project.id == pid))  # serializes version numbers
             number = (s.scalar(select(func.max(Version.number)).where(Version.project_id == pid)) or 0) + 1
             parent = s.scalar(select(func.max(Version.number)).where(Version.project_id == pid, Version.branch == branch))
             if parent is None:
                 parent = s.scalar(select(Branch.base_version).where(Branch.project_id == pid, Branch.name == branch))
-            s.add(Version(project_id=pid, number=number, branch=branch, message=message, author=author, parent=parent,
-                          state_json=state, created_at=now()))
+            s.add(Version(project_id=pid, number=number, branch=branch, message=message, author=author,
+                          author_id=author_id, parent=parent, state_json=state, created_at=now()))
         return self.get_version(pid, number, with_state=False)
 
     def head_version(self, pid: str, branch: str) -> int | None:
@@ -753,7 +756,7 @@ class Store:
             v = s.get(Version, (pid, number))
             if v is None:
                 return None
-            out = v.to_dict("project_id", "number", "branch", "message", "author", "parent", "created_at")
+            out = v.to_dict("project_id", "number", "branch", "message", "author", "author_id", "parent", "created_at")
             if with_state:
                 out["state"] = v.state_json
             return out
@@ -840,12 +843,13 @@ class Store:
 
     def create_token(self, token_hash: str, kind: str, org_id: str, user_name: str, scopes: list[str],
                      client_id: str | None = None, name: str = "", expires_at: float | None = None,
-                     resource: str | None = None, user_id: str | None = None) -> dict[str, Any]:
+                     resource: str | None = None, user_id: str | None = None,
+                     auth_method: str | None = None) -> dict[str, Any]:
         tid = f"tok-{secrets.token_hex(6)}"
         with self._s() as s:
             s.add(ApiToken(id=tid, token_hash=token_hash, kind=kind, org_id=org_id, user_name=user_name,
                            user_id=user_id, scopes=list(scopes), client_id=client_id, name=name, resource=resource,
-                           created_at=now(), expires_at=expires_at, revoked=False))
+                           created_at=now(), expires_at=expires_at, revoked=False, auth_method=auth_method))
         return self.get_token_by_id(tid)
 
     def get_token(self, token_hash: str) -> dict[str, Any] | None:

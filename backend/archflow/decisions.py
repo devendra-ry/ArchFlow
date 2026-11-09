@@ -284,7 +284,7 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
         current = store.get_state(pid, target)
         if current is None:
             raise HTTPException(404, f"branch '{target}' not found")
-        safety = store.commit(pid, target, f"Before adopting {source} ({did})", actor, current)
+        safety = store.commit(pid, target, f"Before adopting {source} ({did})", actor, current, a.user["id"])
         with store.transaction(pid, target) as current:
             if current is None:
                 raise HTTPException(404, f"branch '{target}' not found")
@@ -294,7 +294,7 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
             store.log_activity(pid, target, actor, summary, adopted.rev)
             history.record(store, pid, target, actor, current, adopted)
         await sync_to_live_doc(pid, target, current, adopted, actor)
-        version = store.commit(pid, target, f"Adopted {source} ({did})", actor, adopted)
+        version = store.commit(pid, target, f"Adopted {source} ({did})", actor, adopted, a.user["id"])
         decision = update_decision(store, pid, did, {"status": "accepted"}, actor)
         await broadcast(pid, target, {"type": "state", "state": adopted.model_dump(), "actor": actor,
                                       "summary": summary})

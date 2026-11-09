@@ -315,7 +315,7 @@ def create_app(store: Store | None = None) -> FastAPI:
         project = store.create_project(body.name, body.description, build_template(body.template), org_id=a.org_id)
         state = store.get_state(project["id"], "main")
         if state.nodes or state.requirements:
-            store.commit(project["id"], "main", f"Created from template '{body.template}'", a.actor, state)
+            store.commit(project["id"], "main", f"Created from template '{body.template}'", a.actor, state, a.user["id"])
         return project
 
     @app.delete("/api/projects/{pid}", status_code=204)
@@ -342,9 +342,9 @@ def create_app(store: Store | None = None) -> FastAPI:
         return store.list_activity(pid, branch, limit)
 
     # ---- versions & branches ----
-    async def commit_version(pid: str, branch: str, message: str, author: str) -> dict[str, Any]:
+    async def commit_version(pid: str, branch: str, message: str, author: str, author_id: str | None = None) -> dict[str, Any]:
         state = state_or_404(pid, branch)
-        version = store.commit(pid, branch, message, author, state)
+        version = store.commit(pid, branch, message, author, state, author_id)
         await hub.broadcast(Hub.key(pid, branch), {"type": "versions", "actor": author})
         integrations.notify(store, project_or_404(pid).get("org_id"), pid, "version",
                             f"{author} saved v{version['number']} on {branch}", message, branch=branch)
@@ -358,7 +358,7 @@ def create_app(store: Store | None = None) -> FastAPI:
 
     @app.post("/api/projects/{pid}/commit", status_code=201)
     async def commit(pid: str, body: CommitIn, branch: str = "main", a: Access = Depends(edit)):
-        return await commit_version(pid, branch, body.message, a.actor)
+        return await commit_version(pid, branch, body.message, a.actor, a.user["id"])
 
     @app.get("/api/projects/{pid}/versions")
     def versions(pid: str, a: Access = Depends(read)):
@@ -393,7 +393,7 @@ def create_app(store: Store | None = None) -> FastAPI:
         before = store.get_state(pid, branch)
         if before is None:
             raise HTTPException(404, f"branch '{branch}' not found")
-        safety = store.commit(pid, branch, f"Before restoring v{body.version}", a.actor, before)  # undo point
+        safety = store.commit(pid, branch, f"Before restoring v{body.version}", a.actor, before, a.user["id"])  # undo point
         with store.transaction(pid, branch) as current:
             if current is None:
                 raise HTTPException(404, f"branch '{branch}' not found")
@@ -657,7 +657,7 @@ def create_app(store: Store | None = None) -> FastAPI:
                                     replace=body.mode != "merge")
         new_state, summary = await commit_ops(pid, target, ops, f"{a.actor} (design chat)")
         version = store.commit(pid, target, f"Applied architecture option: {body.option.get('name', 'option')}",
-                               a.actor, new_state)
+                               a.actor, new_state, a.user["id"])
         await hub.broadcast(Hub.key(pid, target), {"type": "versions", "actor": a.actor})
         if conv:  # record the choice; a design chat follows the draft branch it created
             name = body.option.get("name", "option")

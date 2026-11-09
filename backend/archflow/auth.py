@@ -73,12 +73,14 @@ class ArchFlowAuthCode(AuthorizationCode):
     org_id: str
     user_name: str
     user_id: str
+    auth_method: str = "password"
 
 
 class ArchFlowRefreshToken(RefreshToken):
     org_id: str
     user_name: str
     user_id: str
+    auth_method: str = "password"
 
 
 def create_pat(store, org_id: str, user: dict[str, Any], name: str, scopes: list[str],
@@ -87,7 +89,8 @@ def create_pat(store, org_id: str, user: dict[str, Any], name: str, scopes: list
     secret = new_secret("pat")
     expires = time.time() + expires_in_days * 86400 if expires_in_days else None
     record = store.create_token(hash_secret(secret), "pat", org_id, user["name"], normalize_scopes(scopes),
-                                name=name, expires_at=expires, resource=MCP_URL, user_id=user["id"])
+                                name=name, expires_at=expires, resource=MCP_URL, user_id=user["id"],
+                                auth_method=user.get("auth_method") or "password")
     return secret, record
 
 
@@ -148,7 +151,7 @@ class ArchFlowOAuthProvider:
         self.store.save_auth_code(hash_secret(code), {
             **{k: req[k] for k in ("client_id", "code_challenge", "redirect_uri", "redirect_uri_provided_explicitly")},
             "scopes": granted, "resource": req["resource"] or MCP_URL, "org_id": org_id,
-            "user_name": user["name"], "user_id": user["id"],
+            "user_name": user["name"], "user_id": user["id"], "auth_method": user.get("auth_method") or "password",
         }, time.time() + CODE_TTL)
         return construct_redirect_uri(req["redirect_uri"], code=code, state=req["state"])
 
@@ -163,7 +166,8 @@ class ArchFlowOAuthProvider:
         if not self.store.pop_auth_code(hash_secret(authorization_code.code)):  # single use
             raise TokenError(error="invalid_grant", error_description="authorization code already used or expired")
         return self._issue(client.client_id, authorization_code.org_id, authorization_code.user_name,
-                           authorization_code.user_id, authorization_code.scopes, authorization_code.resource)
+                           authorization_code.user_id, authorization_code.scopes, authorization_code.resource,
+                           authorization_code.auth_method)
 
     # ---- refresh tokens (rotated on every use) ----
     async def load_refresh_token(self, client: OAuthClientInformationFull, refresh_token: str):
@@ -175,21 +179,22 @@ class ArchFlowOAuthProvider:
         return ArchFlowRefreshToken(token=refresh_token, client_id=client.client_id, scopes=rec["scopes"],
                                     expires_at=int(rec["expires_at"]) if rec["expires_at"] else None,
                                     resource=rec["resource"], subject=rec["user_id"],
-                                    org_id=rec["org_id"], user_name=rec["user_name"], user_id=rec["user_id"])
+                                    org_id=rec["org_id"], user_name=rec["user_name"], user_id=rec["user_id"],
+                                    auth_method=rec.get("auth_method") or "password")
 
     async def exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token, scopes: list[str]) -> OAuthToken:
         if not self.store.revoke_token(hash_secret(refresh_token.token)):  # lost a race with a concurrent refresh
             raise TokenError(error="invalid_grant", error_description="refresh token already used or revoked")
         granted = [s for s in (scopes or refresh_token.scopes) if s in refresh_token.scopes] or refresh_token.scopes
         return self._issue(client.client_id, refresh_token.org_id, refresh_token.user_name, refresh_token.user_id,
-                           granted, refresh_token.resource)
+                           granted, refresh_token.resource, refresh_token.auth_method)
 
     def _issue(self, client_id: str, org_id: str, user_name: str, user_id: str, scopes: list[str],
-               resource: str | None) -> OAuthToken:
+               resource: str | None, auth_method: str = "password") -> OAuthToken:
         access, refresh = new_secret("access"), new_secret("refresh")
         now = time.time()
         common = dict(org_id=org_id, user_name=user_name, user_id=user_id, scopes=scopes, client_id=client_id,
-                      resource=resource or MCP_URL)
+                      resource=resource or MCP_URL, auth_method=auth_method)
         self.store.create_token(hash_secret(access), "access", expires_at=now + ACCESS_TTL, **common)
         self.store.create_token(hash_secret(refresh), "refresh", expires_at=now + REFRESH_TTL, **common)
         return OAuthToken(access_token=access, expires_in=ACCESS_TTL, scope=" ".join(scopes), refresh_token=refresh)
@@ -207,7 +212,8 @@ class ArchFlowOAuthProvider:
                            expires_at=int(rec["expires_at"]) if rec["expires_at"] else None,
                            resource=rec["resource"] or MCP_URL, subject=rec["user_id"],
                            claims={"org_id": rec["org_id"], "token_id": rec["id"], "kind": rec["kind"],
-                                   "user_id": rec["user_id"], "user_name": rec["user_name"]})
+                                   "user_id": rec["user_id"], "user_name": rec["user_name"],
+                                   "auth_method": rec.get("auth_method") or "password"})
 
     async def revoke_token(self, token) -> None:
         self.store.revoke_token(hash_secret(token.token))

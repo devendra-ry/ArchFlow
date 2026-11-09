@@ -507,7 +507,7 @@ def preview(store: Any, pid: str, source: str, target: str,
 
 async def apply(store: Any, pid: str, source: str, target: str, resolutions: dict[str, dict[str, Any]], actor: str,
                 commit_ops: Callable[..., Awaitable[tuple[ProjectState, list[str]]]],
-                expect: tuple[int | None, int | None] = (None, None)) -> dict[str, Any]:
+                expect: tuple[int | None, int | None] = (None, None), actor_id: str | None = None) -> dict[str, Any]:
     """Apply a merge whose every conflict is resolved. Raises MergeError (unresolved or stale) and KeyError."""
     payload, result, ours = preview(store, pid, source, target, resolutions)
     source_rev, target_rev = expect
@@ -521,10 +521,10 @@ async def apply(store: Any, pid: str, source: str, target: str, resolutions: dic
     theirs = store.get_state(pid, source)
     head = store.head_version(pid, source)
     if head is None or state_patch(store.get_version(pid, head)["state"], theirs):
-        head = store.commit(pid, source, f"Snapshot for merging into {target}", actor, theirs)["number"]
-    safety = store.commit(pid, target, f"Before merging {source}", actor, ours) if ops else None
+        head = store.commit(pid, source, f"Snapshot for merging into {target}", actor, theirs, actor_id)["number"]
+    safety = store.commit(pid, target, f"Before merging {source}", actor, ours, actor_id) if ops else None
     new_state, summary = await commit_ops(pid, target, ops, f"{actor} (merge from {source})") if ops else (ours, [])
-    version = store.commit(pid, target, merge_message(source, head, target), actor, new_state)
+    version = store.commit(pid, target, merge_message(source, head, target), actor, new_state, actor_id)
     return {"version": version["number"], "safety_version": safety["number"] if safety else None,
             "source_version": head, "branch": target, "source_branch": source, "summary": summary,
             "conflicts_resolved": len(result.conflicts), "dropped": result.dropped,
@@ -640,7 +640,7 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
         resolutions = {r.id: r.model_dump() for r in body.resolutions}
         try:
             out = await apply(store, pid, body.source, body.target, resolutions, a.actor, commit_ops,
-                              (body.source_rev, body.target_rev))
+                              (body.source_rev, body.target_rev), a.user["id"])
         except KeyError as exc:
             raise HTTPException(404, f"branch '{exc.args[0]}' not found") from exc
         except StaleMerge as exc:
