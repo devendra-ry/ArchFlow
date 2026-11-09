@@ -96,7 +96,7 @@ AUTH_SETTINGS_COLS = ("org_id", "sso_enabled", "issuer", "client_id", "ciphertex
                       "require_sso", "require_mfa", "updated_by", "updated_at")
 AUTH_SETTINGS_FIELDS = AUTH_SETTINGS_COLS[1:-2]
 TOKEN_COLS = ("id", "kind", "org_id", "user_name", "user_id", "scopes", "client_id", "name", "resource",
-              "created_at", "expires_at", "last_used_at", "revoked", "auth_method")
+              "created_at", "expires_at", "last_used_at", "revoked", "auth_method", "project_ids")
 
 
 def code_graph_id() -> str:
@@ -847,12 +847,13 @@ class Store:
     def create_token(self, token_hash: str, kind: str, org_id: str, user_name: str, scopes: list[str],
                      client_id: str | None = None, name: str = "", expires_at: float | None = None,
                      resource: str | None = None, user_id: str | None = None,
-                     auth_method: str | None = None) -> dict[str, Any]:
+                     auth_method: str | None = None, project_ids: list[str] | None = None) -> dict[str, Any]:
         tid = f"tok-{secrets.token_hex(6)}"
         with self._s() as s:
             s.add(ApiToken(id=tid, token_hash=token_hash, kind=kind, org_id=org_id, user_name=user_name,
                            user_id=user_id, scopes=list(scopes), client_id=client_id, name=name, resource=resource,
-                           created_at=now(), expires_at=expires_at, revoked=False, auth_method=auth_method))
+                           created_at=now(), expires_at=expires_at, revoked=False, auth_method=auth_method,
+                           project_ids=list(project_ids) if project_ids else None))
         return self.get_token_by_id(tid)
 
     def get_token(self, token_hash: str) -> dict[str, Any] | None:

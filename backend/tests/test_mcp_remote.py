@@ -369,3 +369,23 @@ def test_org_sign_in_rules_apply_to_agents(env):
     assert not tool(client, owner_tokens["access_token"], "get_architecture", project_id=pid)[0]
     # the token remembers how its user had signed in when it was granted
     assert store.get_token(auth.hash_secret(dev_tokens["access_token"]))["auth_method"] == "password"
+
+
+def test_a_token_limited_to_one_project_sees_only_that_project(env):
+    client, store = env
+    a = client.post("/api/projects", json={"name": "A", "template": "blank"}).json()["id"]
+    b = client.post("/api/projects", json={"name": "B", "template": "blank"}).json()["id"]
+    r = client.post("/api/orgs/org-default/tokens", json={"name": "CI", "access": "read", "project_ids": ["p-nope"]})
+    assert r.status_code == 422  # only projects of this organization
+    created = client.post("/api/orgs/org-default/tokens", json={"name": "CI", "access": "read", "project_ids": [a]}).json()
+    assert created["project_ids"] == [a]
+    pat = created["token"]
+    err, out, _ = tool(client, pat, "list_projects")
+    assert not err and [p["id"] for p in out["result"]] == [a]
+    assert not tool(client, pat, "get_architecture", project_id=a)[0]
+    err, _, text = tool(client, pat, "get_architecture", project_id=b)
+    assert err and "not found" in text
+    # An unrestricted token still sees both
+    everything = client.post("/api/orgs/org-default/tokens", json={"name": "all", "access": "read"}).json()
+    assert everything["project_ids"] is None
+    assert {p["id"] for p in tool(client, everything["token"], "list_projects")[1]["result"]} >= {a, b}

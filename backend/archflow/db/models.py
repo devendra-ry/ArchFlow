@@ -242,6 +242,8 @@ class ApiToken(Base):
     # How the user had signed in when the token was granted: "password" or "sso:<org_id>" (None: before this was
     # recorded, treated as "password"). MCP calls apply the org's require-SSO rule to it, as the web does to sessions.
     auth_method: Mapped[str | None] = mapped_column(Text)
+    # Personal access tokens may be limited to some projects (None: every project in the org).
+    project_ids: Mapped[list[str] | None] = mapped_column(JSONType)
 
 
 # --------------------------------------------------------------------------- decisions, code graphs

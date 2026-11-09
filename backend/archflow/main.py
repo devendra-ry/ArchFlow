@@ -101,6 +101,7 @@ class TokenIn(BaseModel):
     user_name: str = ""  # ignored: tokens are created for the signed-in user
     access: str = Field("write", pattern="^(read|write)$")
     expires_in_days: int | None = Field(None, ge=1, le=3650)
+    project_ids: list[str] | None = Field(None, max_length=100)  # None or empty: every project in the org
 
 
 class ChatIn(BaseModel):
@@ -986,7 +987,11 @@ def create_app(store: Store | None = None) -> FastAPI:
         scopes = cap_scopes(a.role, requested)
         if not scopes:
             raise HTTPException(403, "Your role cannot create tokens")
-        secret, record = auth.create_pat(store, org_id, a.user, body.name, scopes, body.expires_in_days)
+        projects = list(dict.fromkeys(body.project_ids or []))
+        in_org = {p["id"] for p in store.list_projects(org_id)}
+        if unknown := [p for p in projects if p not in in_org]:
+            raise HTTPException(422, f"Not projects of this organization: {', '.join(unknown[:5])}")
+        secret, record = auth.create_pat(store, org_id, a.user, body.name, scopes, body.expires_in_days, projects or None)
         return {"token": secret, **record}
 
     @app.delete("/api/orgs/{org_id}/tokens/{token_id}", status_code=204)

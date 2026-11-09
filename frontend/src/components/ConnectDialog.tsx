@@ -36,11 +36,17 @@ export function ConnectDialog({ orgId, orgName, canManage, onClose }: Props) {
   const [name, setName] = useState("");
   const [access, setAccess] = useState<"read" | "write">("write");
   const [expiry, setExpiry] = useState<string>("90");
+  const [scope, setScope] = useState<string>("");  // "" = every project, else one project id
+  const [projects, setProjects] = useState<{ id: string; name: string }[]>([]);
   const [created, setCreated] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [org, setOrg] = useState(orgName ?? orgId);
 
-  const load = () => { if (canManage) api.tokens(orgId).then(setTokens).catch((e) => setError(e.message)); };
+  const load = () => {
+    if (!canManage) return;
+    api.tokens(orgId).then(setTokens).catch((e) => setError(e.message));
+    api.projects(orgId).then((ps) => setProjects(ps.map((p) => ({ id: p.id, name: p.name })))).catch(() => {});
+  };
   useEffect(() => {
     api.mcpInfo().then((i) => setUrl(i.url)).catch(() => setUrl(`${location.protocol}//${location.hostname}:8000/mcp`));
     api.orgs().then((os) => setOrg(os.find((o) => o.id === orgId)?.name ?? orgId)).catch(() => {});
@@ -50,7 +56,7 @@ export function ConnectDialog({ orgId, orgName, canManage, onClose }: Props) {
   const create = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const t = await api.createToken(orgId, name.trim(), access, expiry ? Number(expiry) : null);
+      const t = await api.createToken(orgId, name.trim(), access, expiry ? Number(expiry) : null, scope ? [scope] : null);
       setCreated(t.token);
       setName("");
       load();
@@ -129,6 +135,9 @@ export function ConnectDialog({ orgId, orgName, canManage, onClose }: Props) {
             options={[{ value: "write", label: "Read & edit" }, { value: "read", label: "Read only" }]} />
           <Select value={expiry} onChange={setExpiry} aria-label="Expiry"
             options={[{ value: "30", label: "30 days" }, { value: "90", label: "90 days" }, { value: "365", label: "1 year" }, { value: "", label: "No expiry" }]} />
+          <Select value={scope} onChange={setScope} aria-label="Projects"
+            options={[{ value: "", label: "All projects", hint: "Every project in the organization" },
+              ...projects.map((p) => ({ value: p.id, label: p.name, hint: "Only this project" }))]} />
           <button className="primary" disabled={!name.trim()}>Create token</button>
         </form>
         <TokenTable rows={pats} empty="No tokens yet." onRevoke={revoke} kind="pat" />
@@ -145,15 +154,20 @@ export function ConnectDialog({ orgId, orgName, canManage, onClose }: Props) {
 function TokenTable({ rows, empty, onRevoke, kind }: { rows: ApiToken[]; empty: string; onRevoke: (id: string) => void; kind: "pat" | "app" }) {
   const [confirm, setConfirm] = useState<string | null>(null);
   if (!rows.length) return <p className="muted small">{empty}</p>;
+  const signIn = (m?: string | null) => (m?.startsWith("sso:") ? "SSO" : "Password");
   return (
     <table className="tokens">
-      <thead><tr><th>{kind === "pat" ? "Name" : "App"}</th><th>User</th><th>Access</th><th>Last used</th><th>Expires</th><th /></tr></thead>
+      <thead><tr><th>{kind === "pat" ? "Name" : "App"}</th><th>User</th><th>Access</th><th>Scope</th>
+        <th title="How the user had signed in when this was granted; an org that requires SSO only accepts SSO">Sign-in</th>
+        <th>Last used</th><th>Expires</th><th /></tr></thead>
       <tbody>
         {rows.map((t) => (
           <tr key={t.id}>
             <td>{kind === "pat" ? t.name : t.client_name}</td>
             <td>{t.user_name}</td>
             <td>{t.access === "write" ? "Read & edit" : "Read only"}</td>
+            <td>{t.project_ids?.length ? `${t.project_ids.length} project${t.project_ids.length > 1 ? "s" : ""}` : "All projects"}</td>
+            <td>{signIn(t.auth_method)}</td>
             <td>{ago(t.last_used_at)}</td>
             <td>{t.expires_at ? new Date(t.expires_at * 1000).toLocaleDateString() : "never"}</td>
             <td>

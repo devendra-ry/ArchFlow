@@ -215,8 +215,8 @@ export const api = {
   orgs: () => call<Org[]>("GET", "/orgs"),
   mcpInfo: () => call<{ url: string; issuer: string; scopes: string[] }>("GET", "/mcp-info"),
   tokens: (org: string) => call<ApiToken[]>("GET", `/orgs/${org}/tokens`),
-  createToken: (org: string, name: string, access: "read" | "write", expires_in_days: number | null) =>
-    call<ApiToken & { token: string }>("POST", `/orgs/${org}/tokens`, { name, access, expires_in_days }),
+  createToken: (org: string, name: string, access: "read" | "write", expires_in_days: number | null, project_ids: string[] | null = null) =>
+    call<ApiToken & { token: string }>("POST", `/orgs/${org}/tokens`, { name, access, expires_in_days, project_ids }),
   revokeToken: (org: string, id: string) => call<null>("DELETE", `/orgs/${org}/tokens/${id}`),
   createOrg: (name: string) => call<Org>("POST", "/orgs", { name }),
   projects: (org_id?: string) => call<Project[]>("GET", "/projects", undefined, org_id ? { org_id } : undefined),

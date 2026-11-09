@@ -84,13 +84,14 @@ class ArchFlowRefreshToken(RefreshToken):
 
 
 def create_pat(store, org_id: str, user: dict[str, Any], name: str, scopes: list[str],
-               expires_in_days: int | None = None) -> tuple[str, dict[str, Any]]:
-    """Create a personal access token for ``user``. Returns (secret, record); the secret is shown once."""
+               expires_in_days: int | None = None, project_ids: list[str] | None = None) -> tuple[str, dict[str, Any]]:
+    """Create a personal access token for ``user``, optionally limited to ``project_ids``. Returns (secret, record);
+    the secret is shown once."""
     secret = new_secret("pat")
     expires = time.time() + expires_in_days * 86400 if expires_in_days else None
     record = store.create_token(hash_secret(secret), "pat", org_id, user["name"], normalize_scopes(scopes),
                                 name=name, expires_at=expires, resource=MCP_URL, user_id=user["id"],
-                                auth_method=user.get("auth_method") or "password")
+                                auth_method=user.get("auth_method") or "password", project_ids=project_ids)
     return secret, record
 
 
@@ -213,7 +214,8 @@ class ArchFlowOAuthProvider:
                            resource=rec["resource"] or MCP_URL, subject=rec["user_id"],
                            claims={"org_id": rec["org_id"], "token_id": rec["id"], "kind": rec["kind"],
                                    "user_id": rec["user_id"], "user_name": rec["user_name"],
-                                   "auth_method": rec.get("auth_method") or "password"})
+                                   "auth_method": rec.get("auth_method") or "password",
+                                   "project_ids": rec.get("project_ids")})
 
     async def revoke_token(self, token) -> None:
         self.store.revoke_token(hash_secret(token.token))

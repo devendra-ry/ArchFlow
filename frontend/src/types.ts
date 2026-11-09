@@ -125,6 +125,10 @@ export interface AITestResult { ok: boolean; group: AIGroup; model?: string; cha
 export interface ApiToken {
   id: string; kind: "pat" | "refresh"; name: string; user_name: string; access: "read" | "write";
   client_name: string; created_at: string; expires_at: number | null; last_used_at: string | null;
+  /** How the user had signed in when the token was granted ("password" or "sso:<org>"). */
+  auth_method?: string | null;
+  /** Projects the token is limited to (null: every project in the org). */
+  project_ids?: string[] | null;
 }
 export interface Branch { name: string; base_version: number | null; created_at: string }
 export interface Version {

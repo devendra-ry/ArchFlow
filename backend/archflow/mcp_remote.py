@@ -81,6 +81,7 @@ class Principal:
         self.user: str = account.get("name") or claims.get("user_name") or "agent"
         self.client: str = tok.client_id
         self.token_scopes = set(tok.scopes)
+        self.project_ids: set[str] | None = set(claims["project_ids"]) if claims.get("project_ids") else None
         self.org_role = role
         self._needs_write = False
         self.scopes = self.token_scopes & set(authz.role_scopes(role))
@@ -133,7 +134,7 @@ def build_remote_mcp(services: Services) -> MCPServer:
     # ---- helpers ----
     def project_for(p: Principal, project_id: str, branch: str = "main") -> tuple[dict, ProjectState]:
         project = store.get_project(project_id)
-        if not project or project.get("org_id") != p.org_id:
+        if not project or project.get("org_id") != p.org_id or (p.project_ids is not None and project_id not in p.project_ids):
             raise ToolError(f"Project '{project_id}' not found in your organization")
         p.for_project(store, project_id)
         state = store.get_state(project_id, branch)
@@ -177,7 +178,8 @@ def build_remote_mcp(services: Services) -> MCPServer:
     def list_projects() -> list[dict[str, Any]]:
         """Projects in your organization."""
         p = Principal(store)
-        return [{k: x[k] for k in ("id", "name", "description", "created_at")} for x in store.list_projects(p.org_id)]
+        return [{k: x[k] for k in ("id", "name", "description", "created_at")} for x in store.list_projects(p.org_id)
+                if p.project_ids is None or x["id"] in p.project_ids]
 
     @mcp.tool()
     def get_architecture(project_id: str, branch: str = "main") -> dict[str, Any]:
