@@ -27,7 +27,7 @@ MAX_BODY = 5000
 
 class CommentIn(BaseModel):
     body: str = Field(min_length=1, max_length=MAX_BODY)
-    target_type: str = Field("project", pattern="^(project|node|decision)$")
+    target_type: str = Field("project", pattern="^(project|node|decision|requirement|edge)$")
     target_id: str = Field("", max_length=120)
     parent_id: str = Field("", max_length=40)
     mentions: list[str] = Field(default_factory=list, max_length=50)
@@ -84,6 +84,14 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
             raise HTTPException(422, f"target_id is required for a {target_type} comment")
         if target_type == "decision" and not store.get_decision(pid, target_id):
             raise HTTPException(404, "decision not found")
+        if target_type in ("node", "requirement", "edge") and not body.parent_id:
+            state = store.get_state(pid, branch)
+            if state is None:
+                raise HTTPException(404, f"branch '{branch}' not found")
+            items = {"node": state.nodes, "requirement": state.requirements, "edge": state.edges}[target_type]
+            if target_id not in items:
+                label = {"node": "component", "requirement": "requirement", "edge": "connection"}[target_type]
+                raise HTTPException(404, f"{label} '{target_id}' not found on branch '{branch}'")
         mentions = members_only(a.org_id, body.mentions)
         c = store.add_comment(pid, branch, author_id=a.user["id"], author_name=a.actor, body=body.body.strip(),
                               target_type=target_type, target_id=target_id if target_type != "project" else "",

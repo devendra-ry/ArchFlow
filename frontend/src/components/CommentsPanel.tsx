@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { Box, Check, Icon, Scale, Target } from "../icons";
+import { ArrowLeftRight, Box, Check, Icon, ListChecks, Scale, Target } from "../icons";
 import { api } from "../api";
 import type { Comment, CommentTarget, Member, ProjectState } from "../types";
 
@@ -12,6 +12,12 @@ interface Props {
   state: ProjectState | null;
   /** The component selected on the canvas: new comments go on it, and the list can be narrowed to it. */
   selectedNode: string | null;
+  /** The one selected connection, if exactly one is selected: new comments go on it. */
+  selectedEdge?: string | null;
+  /** A requirement opened for discussion from the Requirements panel: new comments go on it until cleared. */
+  focusRequirement?: string | null;
+  onClearRequirement?: () => void;
+  onShowRequirement?: (id: string) => void;
   /** A thread to scroll to and highlight (from a notification or a canvas badge). */
   focusThread: string | null;
   canComment: boolean;
@@ -121,8 +127,8 @@ export function MentionInput({ members, meId, value, onChange, onSubmit, placeho
 }
 
 /** Threaded comments on components, decisions and the project, with @mentions, replies and resolving. */
-export function CommentsPanel({ pid, branch, comments, members, meId, state, selectedNode, focusThread, canComment, canResolveAny,
-  isAdmin, onChanged, onShowNode, toast }: Props) {
+export function CommentsPanel({ pid, branch, comments, members, meId, state, selectedNode, selectedEdge = null, focusRequirement = null,
+  onClearRequirement, onShowRequirement, focusThread, canComment, canResolveAny, isAdmin, onChanged, onShowNode, toast }: Props) {
   const [show, setShow] = useState<"open" | "resolved">("open");
   const [onlySelected, setOnlySelected] = useState(false);
   const [draft, setDraft] = useState({ text: "", mentions: [] as string[] });
@@ -147,20 +153,43 @@ export function CommentsPanel({ pid, branch, comments, members, meId, state, sel
     window.setTimeout(() => listRef.current?.querySelector(`[data-thread="${focused.root.id}"]`)?.scrollIntoView({ block: "center", behavior: "smooth" }), 60);
   }, [focusThread, focused?.root.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const selectedName = selectedNode ? state?.nodes[selectedNode]?.name : undefined;
+  const edgeLabel = (id: string) => {
+    const e = state?.edges[id];
+    return e ? `${state?.nodes[e.source]?.name ?? e.source} → ${state?.nodes[e.target]?.name ?? e.target}` : undefined;
+  };
+  const req = focusRequirement ? state?.requirements[focusRequirement] : undefined;
+  // What a new comment is about: a requirement opened for discussion, else the selected component or connection.
+  const target: { target_type: CommentTarget; target_id: string; label?: string } = req
+    ? { target_type: "requirement", target_id: req.id, label: `${req.id} ${req.title}` }
+    : selectedNode && state?.nodes[selectedNode] ? { target_type: "node", target_id: selectedNode, label: state.nodes[selectedNode].name }
+    : selectedEdge && edgeLabel(selectedEdge) ? { target_type: "edge", target_id: selectedEdge, label: edgeLabel(selectedEdge) }
+    : { target_type: "project", target_id: "" };
+  const selectedName = target.label;
   const visible = threads.filter((t) => (show === "resolved") === t.root.resolved
-    && (!onlySelected || !selectedNode || (t.root.target_type === "node" && t.root.target_id === selectedNode)));
+    && (!onlySelected || target.target_type === "project"
+      || (t.root.target_type === target.target_type && t.root.target_id === target.target_id)));
   const openCount = threads.filter((t) => !t.root.resolved).length;
   const resolvedCount = threads.length - openCount;
 
   const run = async (p: Promise<unknown>, ok?: () => void) => {
     try { await p; ok?.(); onChanged(); } catch (e) { toast((e as Error).message); }
   };
-  const target: { target_type: CommentTarget; target_id: string } = selectedName
-    ? { target_type: "node", target_id: selectedNode! } : { target_type: "project", target_id: "" };
-  const targetLabel = (c: Comment) => c.target_type === "node"
-    ? (state?.nodes[c.target_id]?.name ?? "a deleted component")
+  const targetLabel = (c: Comment) => c.target_type === "node" ? (state?.nodes[c.target_id]?.name ?? "a deleted component")
+    : c.target_type === "edge" ? (edgeLabel(c.target_id) ?? "a deleted connection")
+    : c.target_type === "requirement" ? (state?.requirements[c.target_id] ? `${c.target_id} ${state.requirements[c.target_id].title}` : `${c.target_id} (deleted)`)
     : c.target_type === "decision" ? c.target_id : "Whole project";
+  const showTarget = (c: Comment) => {
+    if (c.target_type === "node") onShowNode(c.target_id);
+    else if (c.target_type === "edge") { const e = state?.edges[c.target_id]; if (e) onShowNode(e.source); }
+    else if (c.target_type === "requirement") onShowRequirement?.(c.target_id);
+  };
+  const canShow = (c: Comment) => (c.target_type === "node" && !!state?.nodes[c.target_id])
+    || (c.target_type === "edge" && !!state?.edges[c.target_id])
+    || (c.target_type === "requirement" && !!state?.requirements[c.target_id] && !!onShowRequirement);
+  const TargetIcon = (c: Comment) => c.target_type === "node" ? <Icon as={Box} size={12} />
+    : c.target_type === "edge" ? <Icon as={ArrowLeftRight} size={12} />
+    : c.target_type === "requirement" ? <Icon as={ListChecks} size={12} />
+    : c.target_type === "decision" ? <Icon as={Scale} size={12} /> : <Icon as={Target} size={12} />;
 
   const commentView = (c: Comment, isRoot: boolean) => {
     const mine = c.author_id === meId;
@@ -202,7 +231,8 @@ export function CommentsPanel({ pid, branch, comments, members, meId, state, sel
         <div className="panel-head">
           <div className="panel-summary small">
             Comment on {selectedName ? <b>{selectedName}</b> : <b>the whole project</b>}
-            {!selectedName && <span className="muted"> · select a component to comment on it</span>}. Type @ to mention someone.
+            {req && onClearRequirement && <> <button className="link small" onClick={onClearRequirement}>(comment on the project instead)</button></>}
+            {!selectedName && <span className="muted"> · select a component or connection, or use Discuss on a requirement</span>}. Type @ to mention someone.
           </div>
           <MentionInput members={members} meId={meId} value={draft.text} label="New comment" submitLabel="Comment"
             placeholder={selectedName ? `Comment on ${selectedName}…` : "Ask a question or leave feedback…"}
@@ -229,9 +259,9 @@ export function CommentsPanel({ pid, branch, comments, members, meId, state, sel
       <ul className="thread-list" ref={listRef}>
         {visible.map(({ root, replies }) => (
           <li key={root.id} data-thread={root.id} className={`thread ${focusThread === root.id ? "focused" : ""} ${root.resolved ? "resolved" : ""}`}>
-            <button className="thread-target small" disabled={root.target_type !== "node" || !state?.nodes[root.target_id]}
-              onClick={() => onShowNode(root.target_id)} title={root.target_type === "node" ? "Show on the canvas" : undefined}>
-              {root.target_type === "node" ? <Icon as={Box} size={12} /> : root.target_type === "decision" ? <Icon as={Scale} size={12} /> : <Icon as={Target} size={12} />} {targetLabel(root)}
+            <button className="thread-target small" disabled={!canShow(root)} onClick={() => showTarget(root)}
+              title={canShow(root) ? (root.target_type === "requirement" ? "Open the requirement" : "Show on the canvas") : undefined}>
+              {TargetIcon(root)} {targetLabel(root)}
             </button>
             {commentView(root, true)}
             {replies.map((r) => <div key={r.id} className="reply">{commentView(r, false)}</div>)}

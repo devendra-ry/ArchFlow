@@ -467,6 +467,12 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
     return m;
   }, [comments]);
   const openThreadsCount = comments.filter((c) => !c.parent_id && !c.resolved).length;
+  const [discussReq, setDiscussReq] = useState<string | null>(null);
+  const reqCommentCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const c of comments) if (!c.parent_id && !c.resolved && c.target_type === "requirement") out[c.target_id] = (out[c.target_id] ?? 0) + 1;
+    return out;
+  }, [comments]);
 
   const highlight = useMemo<Set<string> | null>(() => {
     if (!state) return null;
@@ -1027,6 +1033,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         {state && tab === "requirements" && (
           <RequirementsPanel state={state} issues={analysis?.requirement_issues ?? []} traced={traced} onTrace={setTraced} readOnly={readOnly}
             send={send} onPrompt={(rid) => setPromptFor({ nodeIds: [], requirementIds: [rid] })}
+            onDiscuss={(rid) => { setDiscussReq(rid); setTab("comments"); }} commentCounts={reqCommentCounts}
             pid={pid} branch={branch} isAdmin={can(role, "admin")} toast={toast} onMemoryChanged={loadMemory}
             jira={jiraByReq} onJira={jira?.connected && can(role, "edit") ? () => setJiraOpen(true) : undefined}
             github={githubByReq} onGitHub={github?.connected && can(role, "edit") ? () => setGithubOpen(true) : undefined}
@@ -1040,6 +1047,9 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         {tab === "comments" && (
           <CommentsPanel pid={pid} branch={branch} comments={comments} members={members} meId={me.user.id} state={state}
             selectedNode={selectedNodeIds.length === 1 ? selectedNodeIds[0] : null} focusThread={focusThread}
+            selectedEdge={selectedEdgeIds.length === 1 && !selectedNodeIds.length ? selectedEdgeIds[0] : null}
+            focusRequirement={discussReq} onClearRequirement={() => setDiscussReq(null)}
+            onShowRequirement={(rid) => { setDiscussReq(null); setTab("requirements"); setTraced(rid); }}
             canComment={can(role, "review")} canResolveAny={can(role, "edit")} isAdmin={can(role, "admin")}
             onChanged={loadComments} onShowNode={(id) => focusNodes([id])} toast={toast} />
         )}

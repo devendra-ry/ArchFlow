@@ -72,7 +72,7 @@ AI_TRACE_FILTERS = ("project_id", "feature", "prompt", "status", "user_id", "par
 AI_TRACE_LIST_COLS = ("id", "org_id", "project_id", "parent_id", "user_id", "user_name", "feature", "prompt", "agent",
                       "status", "error", "question", "answer", "models", "prompt_tokens", "completion_tokens",
                       "cost_usd", "latency_ms", "model_calls", "tool_calls", "created_at")
-COMMENT_TARGETS = ("project", "node", "decision")
+COMMENT_TARGETS = ("project", "node", "decision", "requirement", "edge")
 COMMENT_COLS = ("id", "project_id", "branch", "target_type", "target_id", "parent_id", "author_id", "author_name",
                 "body", "mentions", "resolved", "resolved_by", "created_at", "edited_at")
 NOTIFICATION_COLS = ("id", "project_id", "branch", "comment_id", "thread_id", "version", "kind", "actor_name", "preview",

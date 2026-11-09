@@ -164,6 +164,7 @@ h4 { margin: 16px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppe
 .req.traced { background: color-mix(in srgb, var(--primary) 8%, var(--panel)); box-shadow: inset 3px 0 var(--primary); }
 .req-row { display: flex; gap: 8px; align-items: baseline; cursor: pointer; }
 .req-title { flex: 1; font-weight: 500; }
+.req-comments { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; color: var(--muted); flex: none; }
 .req-meta { margin-top: 2px; }
 .req-edit { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .status { font-size: 10.5px; padding: 1px 6px; border-radius: 999px; background: var(--panel-2); text-transform: uppercase; letter-spacing: .03em; }

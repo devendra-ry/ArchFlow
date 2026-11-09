@@ -145,3 +145,17 @@ def test_notifications_arrive_live_over_the_socket(app, team):
         with new_client(app).websocket_connect("/ws/notifications", headers={"Origin": "http://localhost:5173"}) as ws:
             ws.receive_json()
     assert refused.value.code == 4401
+
+
+def test_comment_on_a_requirement_or_a_connection(team):
+    owner, pid = team["owner"], team["pid"]
+    state = owner.get(f"/api/projects/{pid}").json()["state"]
+    rid, eid = next(iter(state["requirements"])), next(iter(state["edges"]))
+    for target_type, target_id in (("requirement", rid), ("edge", eid)):
+        r = owner.post(f"/api/projects/{pid}/comments", json={"body": "Is this right?", "target_type": target_type,
+                                                              "target_id": target_id})
+        assert r.status_code == 201 and r.json()["target_type"] == target_type and r.json()["target_id"] == target_id
+    # Targets must exist on the branch (components were not checked before either)
+    for target_type in ("requirement", "edge", "node"):
+        r = owner.post(f"/api/projects/{pid}/comments", json={"body": "x", "target_type": target_type, "target_id": "nope"})
+        assert r.status_code == 404, (target_type, r.text)

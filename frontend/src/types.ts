@@ -449,7 +449,7 @@ export interface PromptInfo {
 }
 
 // ---- comments and notifications ----
-export type CommentTarget = "project" | "node" | "decision";
+export type CommentTarget = "project" | "node" | "decision" | "requirement" | "edge";
 export interface Comment {
   id: string; project_id: string; branch: string; target_type: CommentTarget; target_id: string; parent_id: string;
   author_id: string; author_name: string; body: string; mentions: string[]; resolved: boolean; resolved_by: string;

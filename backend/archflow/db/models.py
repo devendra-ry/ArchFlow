@@ -333,7 +333,7 @@ class ProjectMemory(Base):
 class Comment(Base):
     """A comment thread (``parent_id`` empty) or a reply, on a component, a decision or the whole project."""
     __tablename__ = "comments"
-    __table_args__ = (CheckConstraint("target_type IN ('project', 'node', 'decision')", name="ck_comments_target"),
+    __table_args__ = (CheckConstraint("target_type IN ('project', 'node', 'decision', 'requirement', 'edge')", name="ck_comments_target"),
                       Index("idx_comments_project", "project_id", "branch", "created_at"),
                       Index("idx_comments_parent", "parent_id"))
     id: Mapped[str] = mapped_column(Text, primary_key=True)  # cm-<hex>

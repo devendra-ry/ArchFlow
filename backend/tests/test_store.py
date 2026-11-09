@@ -313,7 +313,7 @@ def test_migrations_build_the_same_schema_as_the_models(tmp_path):
     from archflow.db import migrate
 
     fresh = Store(tmp_path / "fresh.db")
-    assert migrate.current(fresh.engine) == "0010" and _schema_drift(fresh.engine) == []
+    assert migrate.current(fresh.engine) == "0011" and _schema_drift(fresh.engine) == []
     fresh.close()
     engine = create_engine(f"sqlite:///{tmp_path / 'migrated.db'}")
     cfg = migrate.config()
@@ -331,7 +331,7 @@ def test_migrations_build_the_same_schema_as_the_models(tmp_path):
 def test_pg_schema_matches_the_models(pg_store):
     from archflow.db import migrate
 
-    assert migrate.current(pg_store.engine) == "0010" and _schema_drift(pg_store.engine) == []
+    assert migrate.current(pg_store.engine) == "0011" and _schema_drift(pg_store.engine) == []
 
 
 # ---------------------------------------------------------------- sqlite migration
@@ -476,5 +476,5 @@ def test_ready_endpoint_reports_the_schema():
     with TestClient(create_app(Store(":memory:"))) as c:
         r = c.get("/api/ready")
         body = r.json()
-        assert r.status_code == 200 and {k: body[k] for k in ("ready", "database", "schema", "expected")} == {"ready": True, "database": "sqlite", "schema": "0010", "expected": "0010"}
+        assert r.status_code == 200 and {k: body[k] for k in ("ready", "database", "schema", "expected")} == {"ready": True, "database": "sqlite", "schema": "0011", "expected": "0011"}
         assert "redis" in body  # reported, never required

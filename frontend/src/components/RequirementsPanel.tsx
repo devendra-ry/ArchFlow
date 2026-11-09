@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ArrowUpDown, ExternalLink, Icon, Mic, SquareTerminal, Upload } from "../icons";
+import { ArrowUpDown, ExternalLink, Icon, MessageSquare, Mic, SquareTerminal, Upload } from "../icons";
 import { api } from "../api";
 import type { Issue, JiraLink, Op, ProjectState, Requirement, RequirementRevision } from "../types";
 import { Field } from "./Field";
@@ -17,6 +17,10 @@ interface Props {
   onTrace: (id: string | null) => void;
   send: (ops: Op[]) => void;
   onPrompt: (reqId: string) => void;
+  /** Open the Comments panel aimed at this requirement. */
+  onDiscuss?: (reqId: string) => void;
+  /** Open comment threads per requirement id. */
+  commentCounts?: Record<string, number>;
   readOnly?: boolean;
   /** Admins may remove a deleted requirement permanently. */
   isAdmin?: boolean;
@@ -92,7 +96,7 @@ function History({ pid, branch, req }: { pid: string; branch: string; req: Requi
 }
 
 export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, issues, traced, onTrace, send, onPrompt,
-  readOnly = false, isAdmin = false, jira = {}, onJira, github = {}, onGitHub, onMeetingImported }: Props) {
+  onDiscuss, commentCounts = {}, readOnly = false, isAdmin = false, jira = {}, onJira, github = {}, onGitHub, onMeetingImported }: Props) {
   const [open, setOpen] = useState<string | null>(null);
   const [detail, setDetail] = useState<"edit" | "history">("edit");
   const [importing, setImporting] = useState(false);
@@ -195,6 +199,8 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
                 title={nodes.length ? `Implemented by ${nodes.map((n) => n.name).join(", ")}` : "No component implements this yet"}>
                 <span className={`req-dot ${mine.length ? "bad" : nodes.length ? "ok" : "warn"}`} aria-hidden />
                 <span className="req-title">{r.title}</span>
+                {!!commentCounts[r.id] && <span className="req-comments" title={`${commentCounts[r.id]} open comment thread(s)`}>
+                  <Icon as={MessageSquare} size={12} /> {commentCounts[r.id]}</span>}
                 <span className={`status s-${r.deleted ? "deleted" : r.status}`}>{r.deleted ? "deleted" : r.status}</span>
               </button>
               <div className="req-meta small muted">
@@ -244,6 +250,8 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
                   ) : (
                     <div className="insp-actions">
                       <button onClick={() => onPrompt(r.id)} title="Turn this requirement into a change spec for a coding agent"><Icon as={SquareTerminal} size={14} /> Vibe code this</button>
+                      {onDiscuss && <button onClick={() => onDiscuss(r.id)} title="Comment on this requirement and see its threads">
+                        <Icon as={MessageSquare} size={14} /> Discuss{commentCounts[r.id] ? ` (${commentCounts[r.id]})` : ""}</button>}
                       {!readOnly && <button className="danger" onClick={() => send([{ op: "remove_requirement", id: r.id }])}
                         title="Moves it to Deleted, where it can be restored">Delete</button>}
                     </div>
