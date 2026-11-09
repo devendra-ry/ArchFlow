@@ -399,6 +399,8 @@ class OrgApprovalPolicy(Base):
     org_id: Mapped[str] = mapped_column(Text, _fk("orgs.id"), primary_key=True)
     required_approvals: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     require_for_adopt: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    # main changes only through an approved merge or adoption (no direct edits, AI, imports or restores)
+    protect_main: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     updated_by: Mapped[str | None] = mapped_column(Text)
     updated_at: Mapped[str] = mapped_column(UTCDateTime, nullable=False, default=now, onupdate=now)
 

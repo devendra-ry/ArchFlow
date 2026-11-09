@@ -1212,14 +1212,16 @@ class Store:
         with self._s() as s:
             p = s.get(OrgApprovalPolicy, org_id)
             if p is None:
-                return {"required_approvals": 1, "require_for_adopt": False, "updated_by": None, "updated_at": None}
-            return p.to_dict("required_approvals", "require_for_adopt", "updated_by", "updated_at")
+                return {"required_approvals": 1, "require_for_adopt": False, "protect_main": False,
+                        "updated_by": None, "updated_at": None}
+            return p.to_dict("required_approvals", "require_for_adopt", "protect_main", "updated_by", "updated_at")
 
     def set_approval_policy(self, org_id: str, required_approvals: int, require_for_adopt: bool,
-                            user: str) -> dict[str, Any]:
+                            user: str, protect_main: bool = False) -> dict[str, Any]:
         with self._s() as s:
             self._upsert(s, OrgApprovalPolicy, {"org_id": org_id, "required_approvals": required_approvals,
-                                                "require_for_adopt": require_for_adopt, "updated_by": user,
+                                                "require_for_adopt": require_for_adopt,
+                                                "protect_main": protect_main, "updated_by": user,
                                                 "updated_at": now()}, ["org_id"])
         return self.get_approval_policy(org_id)
 

@@ -28,6 +28,8 @@ picks. With no AI configured there is no suggestion.
 
 from __future__ import annotations
 
+import functools
+
 import asyncio
 import json
 import logging
@@ -38,7 +40,8 @@ from typing import Any, Awaitable, Callable
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
-from . import agents, llm
+from . import agents, approvals, llm
+
 from .collab_sync import state_patch
 from .diff import diff_states, diff_to_text
 from .models import Edge, Node, ProjectState, Requirement, keep_requirement_seq
@@ -638,8 +641,11 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
     @app.post("/api/projects/{pid}/merge/apply")
     async def merge_apply(pid: str, body: MergeApplyIn, a=Depends(edit)):
         resolutions = {r.id: r.model_dump() for r in body.resolutions}
+        if approvals.is_protected(store, a.org_id, body.target):  # only an approved branch merges into it
+            approvals.check_adopt(store, a.org_id, pid, body.source, body.target, "merging into a protected branch")
         try:
-            out = await apply(store, pid, body.source, body.target, resolutions, a.actor, commit_ops,
+            out = await apply(store, pid, body.source, body.target, resolutions, a.actor,
+                              functools.partial(commit_ops, via_review=True),
                               (body.source_rev, body.target_rev), a.user["id"])
         except KeyError as exc:
             raise HTTPException(404, f"branch '{exc.args[0]}' not found") from exc

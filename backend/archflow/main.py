@@ -251,9 +251,13 @@ def create_app(store: Store | None = None) -> FastAPI:
             # Collab server unreachable: drop the persisted document so it is rebuilt from this state.
             store.delete_ydoc(pid, branch)
 
-    async def commit_ops(pid: str, branch: str, ops: list[dict[str, Any]], actor: str) -> tuple[ProjectState, list[str]]:
-        """The one place state changes: apply atomically, persist, log, broadcast."""
-        project_or_404(pid)
+    async def commit_ops(pid: str, branch: str, ops: list[dict[str, Any]], actor: str,
+                         via_review: bool = False) -> tuple[ProjectState, list[str]]:
+        """The one place state changes: apply atomically, persist, log, broadcast. A protected branch only changes
+        through an approved merge (``via_review``)."""
+        project = project_or_404(pid)
+        if not via_review:
+            approvals.check_writable(store, project["org_id"], pid, branch)
         with store.transaction(pid, branch) as state:  # row lock: safe across server processes
             if state is None:
                 raise HTTPException(404, f"branch '{branch}' not found")
@@ -347,7 +351,8 @@ def create_app(store: Store | None = None) -> FastAPI:
         state = state_or_404(pid, branch)
         return {"project": a.project, "branch": branch, "branches": store.list_branches(pid),
                 "head_version": store.head_version(pid, branch), "state": state.model_dump(),
-                "role": a.role, "ai_available": llm.available(a.org_id)}
+                "role": a.role, "ai_available": llm.available(a.org_id),
+                "protected": approvals.is_protected(store, a.org_id, branch)}
 
     # ---- operations ----
     @app.post("/api/projects/{pid}/ops")
@@ -407,6 +412,7 @@ def create_app(store: Store | None = None) -> FastAPI:
 
     @app.post("/api/projects/{pid}/restore")
     async def restore(pid: str, body: RestoreIn, branch: str = "main", a: Access = Depends(edit)):
+        approvals.check_writable(store, a.org_id, pid, branch)
         v = store.get_version(pid, body.version)
         if not v:
             raise HTTPException(404, "version not found")
@@ -744,7 +750,7 @@ def create_app(store: Store | None = None) -> FastAPI:
         read-only connection (the collab server rejects their document updates)."""
         state_or_404(pid, branch)
         doc = collab_sync.doc_name(pid, branch)
-        read_only = not a.can("edit")
+        read_only = not a.can("edit") or approvals.is_protected(store, a.org_id, branch)
         try:
             ticket = collab_sync.sign_ticket({"uid": a.user["id"], "name": a.user["name"][:40],
                                               "color": color if COLOR_RE.match(color) else "#888888",

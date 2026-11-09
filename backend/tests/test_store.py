@@ -178,7 +178,7 @@ def test_versions_and_branches(store, org):
     assert store.get_version(pid, 99) is None
     listed = store.list_versions(pid)
     assert [v["number"] for v in listed] == [2, 1]
-    assert set(listed[0]) == {"number", "branch", "message", "author", "parent", "created_at"}
+    assert set(listed[0]) == {"number", "branch", "message", "author", "author_id", "parent", "created_at"}
 
     # branch from v1: first commit on the branch has parent = base_version
     store.create_branch(pid, "exp/x", full["state"], 1)
@@ -313,7 +313,7 @@ def test_migrations_build_the_same_schema_as_the_models(tmp_path):
     from archflow.db import migrate
 
     fresh = Store(tmp_path / "fresh.db")
-    assert migrate.current(fresh.engine) == "0012" and _schema_drift(fresh.engine) == []
+    assert migrate.current(fresh.engine) == "0013" and _schema_drift(fresh.engine) == []
     fresh.close()
     engine = create_engine(f"sqlite:///{tmp_path / 'migrated.db'}")
     cfg = migrate.config()
@@ -331,7 +331,7 @@ def test_migrations_build_the_same_schema_as_the_models(tmp_path):
 def test_pg_schema_matches_the_models(pg_store):
     from archflow.db import migrate
 
-    assert migrate.current(pg_store.engine) == "0012" and _schema_drift(pg_store.engine) == []
+    assert migrate.current(pg_store.engine) == "0013" and _schema_drift(pg_store.engine) == []
 
 
 # ---------------------------------------------------------------- sqlite migration
@@ -476,5 +476,5 @@ def test_ready_endpoint_reports_the_schema():
     with TestClient(create_app(Store(":memory:"))) as c:
         r = c.get("/api/ready")
         body = r.json()
-        assert r.status_code == 200 and {k: body[k] for k in ("ready", "database", "schema", "expected")} == {"ready": True, "database": "sqlite", "schema": "0012", "expected": "0012"}
+        assert r.status_code == 200 and {k: body[k] for k in ("ready", "database", "schema", "expected")} == {"ready": True, "database": "sqlite", "schema": "0013", "expected": "0013"}
         assert "redis" in body  # reported, never required

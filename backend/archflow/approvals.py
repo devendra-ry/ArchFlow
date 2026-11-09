@@ -37,6 +37,7 @@ class ReviewIn(BaseModel):
 class PolicyIn(BaseModel):
     required_approvals: int = Field(1, ge=1, le=MAX_REQUIRED)
     require_for_adopt: bool = False
+    protect_main: bool = False
 
 
 # --------------------------------------------------------------------------- status
@@ -90,22 +91,39 @@ def branch_status(store: Any, org_id: str, pid: str, branch: str) -> dict[str, A
             "unsaved_changes": v["state"].model_dump() != state.model_dump()}
 
 
-def check_adopt(store: Any, org_id: str, pid: str, source: str) -> None:
-    """Raise 409 if the org requires approval before adopting and ``source`` is not approved as it stands."""
+PROTECTED_BRANCH = "main"
+
+
+def is_protected(store: Any, org_id: str, branch: str) -> bool:
+    """Whether ``branch`` only changes through an approved merge or adoption (the org's protect-main setting)."""
+    return branch == PROTECTED_BRANCH and bool(store.get_approval_policy(org_id).get("protect_main"))
+
+
+def check_writable(store: Any, org_id: str, pid: str, branch: str) -> None:
+    """Raise 409 for a direct change (edits, AI, imports, restores) to a protected branch."""
+    if is_protected(store, org_id, branch):
+        raise HTTPException(409, f"'{branch}' is protected: make the change on a branch, get it approved, then "
+                                 f"merge or adopt it into {branch}.")
+
+
+def check_adopt(store: Any, org_id: str, pid: str, source: str, target: str = PROTECTED_BRANCH,
+                verb: str = "adopting") -> None:
+    """Raise 409 unless ``source`` is approved as it stands, when the org requires approval before adopting (or
+    merging into a protected ``target``)."""
     policy = store.get_approval_policy(org_id)
-    if not policy["require_for_adopt"]:
+    if not (policy["require_for_adopt"] or is_protected(store, org_id, target)):
         return
     s = branch_status(store, org_id, pid, source)
     n = policy["required_approvals"]
     need = f"{n} approval{'s' if n != 1 else ''}"
     if s["version"] is None:
-        raise HTTPException(409, f"Approval is required before adopting: save a version of '{source}' and get "
+        raise HTTPException(409, f"Approval is required before {verb}: save a version of '{source}' and get "
                                  f"{need} first.")
     if s["status"] != "approved":
-        raise HTTPException(409, f"Approval is required before adopting: '{source}' v{s['version']} is "
+        raise HTTPException(409, f"Approval is required before {verb}: '{source}' v{s['version']} is "
                                  f"{LABELS[s['status']]} ({len(s['approvals'])}/{n} approvals).")
     if s["unsaved_changes"]:
-        raise HTTPException(409, f"Approval is required before adopting: '{source}' has changed since v{s['version']} "
+        raise HTTPException(409, f"Approval is required before {verb}: '{source}' has changed since v{s['version']} "
                                  f"was approved. Save a version and get it approved again.")
 
 
@@ -205,7 +223,9 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
 
     @app.put("/api/orgs/{org_id}/approval-policy")
     def set_policy(org_id: str, body: PolicyIn, a=Depends(authz.org("admin"))):
-        return store.set_approval_policy(org_id, body.required_approvals, body.require_for_adopt, a.actor)
+        return store.set_approval_policy(org_id, body.required_approvals, body.require_for_adopt, a.actor,
+                                         body.protect_main)
 
 
-__all__ = ["STATUSES", "derive", "version_status", "with_status", "branch_status", "check_adopt", "register_routes"]
+__all__ = ["STATUSES", "derive", "version_status", "with_status", "branch_status", "check_adopt", "check_writable", "is_protected",
+           "register_routes"]

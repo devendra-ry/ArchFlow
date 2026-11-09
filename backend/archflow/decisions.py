@@ -279,7 +279,7 @@ def register_routes(app: FastAPI, store: Any, *, authz: Any,
         target = body.target_branch
         if source == target:
             raise HTTPException(422, f"the chosen branch is already '{target}'")
-        approvals.check_adopt(store, a.org_id, pid, source)  # 409 unless approved, when the org requires it
+        approvals.check_adopt(store, a.org_id, pid, source, target)  # 409 unless approved, when required
         chosen_state = store.get_state(pid, source)
         current = store.get_state(pid, target)
         if current is None:

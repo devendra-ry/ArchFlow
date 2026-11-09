@@ -229,7 +229,7 @@ export const api = {
   deleteProject: (pid: string) => call<null>("DELETE", `/projects/${pid}`),
   project: (pid: string, branch: string) =>
     call<{ project: Project; branch: string; branches: Branch[]; head_version: number | null; state: ProjectState;
-      role: Role; ai_available: boolean }>(
+      role: Role; ai_available: boolean; protected: boolean }>(
       "GET", `/projects/${pid}`, undefined, b(branch)),
   ops: (pid: string, branch: string, ops: Op[], actor: string) =>
     call<{ state: ProjectState; summary: string[] }>("POST", `/projects/${pid}/ops`, { ops, actor }, b(branch)),
@@ -336,8 +336,8 @@ export const api = {
   reviewVersion: (pid: string, version: number, action: "request-review" | "approve" | "request-changes", comment = "") =>
     call<VersionReview>("POST", `/projects/${pid}/versions/${version}/${action}`, { comment }),
   approvalPolicy: (org: string) => call<ApprovalPolicy>("GET", `/orgs/${org}/approval-policy`),
-  setApprovalPolicy: (org: string, required_approvals: number, require_for_adopt: boolean) =>
-    call<ApprovalPolicy>("PUT", `/orgs/${org}/approval-policy`, { required_approvals, require_for_adopt }),
+  setApprovalPolicy: (org: string, required_approvals: number, require_for_adopt: boolean, protect_main: boolean) =>
+    call<ApprovalPolicy>("PUT", `/orgs/${org}/approval-policy`, { required_approvals, require_for_adopt, protect_main }),
 
   // ---- architecture decisions ----
   decisions: (pid: string) => call<Decision[]>("GET", `/projects/${pid}/decisions`),

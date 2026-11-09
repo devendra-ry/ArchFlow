@@ -268,3 +268,27 @@ def test_a_version_saved_over_mcp_cannot_be_approved_by_its_author():
         act(arch, pid, n, "request-review")
         r = act(arch, pid, n, "approve")
         assert r.status_code == 403 and "someone else" in r.json()["detail"]
+
+
+def test_protected_main_changes_only_through_an_approved_merge(team):
+    owner, dev, rev, pid = team["owner"], team["dev"], team["rev"], team["pid"]
+    ops = [{"op": "add_node", "node": {"name": "Cache", "type": "cache", "technology": "Redis"}}]
+    assert owner.put("/api/orgs/org-default/approval-policy",
+                     json={"required_approvals": 1, "protect_main": True}).json()["protect_main"] is True
+    assert dev.get(f"/api/projects/{pid}").json()["protected"] is True
+    r = dev.post(f"/api/projects/{pid}/ops", json={"ops": ops})
+    assert r.status_code == 409 and "protected" in r.json()["detail"]
+    assert dev.post(f"/api/projects/{pid}/restore", json={"version": save(dev, pid)}).status_code == 409
+
+    assert dev.post(f"/api/projects/{pid}/branches", json={"name": "feat/cache"}).status_code == 201
+    assert dev.get(f"/api/projects/{pid}", params={"branch": "feat/cache"}).json()["protected"] is False
+    assert dev.post(f"/api/projects/{pid}/ops", params={"branch": "feat/cache"}, json={"ops": ops}).status_code == 200
+    merge = lambda: dev.post(f"/api/projects/{pid}/merge/apply",  # noqa: E731
+                             json={"source": "feat/cache", "target": "main", "resolutions": []})
+    r = merge()
+    assert r.status_code == 409 and "Approval is required before merging" in r.json()["detail"]
+    n = save(dev, pid, "Cache", branch="feat/cache")
+    act(dev, pid, n, "request-review")
+    act(rev, pid, n, "approve")
+    assert merge().status_code == 200, merge().text
+    assert any(x["name"] == "Cache" for x in dev.get(f"/api/projects/{pid}").json()["state"]["nodes"].values())

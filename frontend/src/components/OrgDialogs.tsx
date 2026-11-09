@@ -142,16 +142,19 @@ function ApprovalPolicySection({ orgId, manage }: { orgId: string; manage: boole
   const [policy, setPolicy] = useState<ApprovalPolicy | null>(null);
   const [required, setRequired] = useState(1);
   const [forAdopt, setForAdopt] = useState(false);
+  const [protectMain, setProtectMain] = useState(false);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const show = (p: ApprovalPolicy) => { setPolicy(p); setRequired(p.required_approvals); setForAdopt(p.require_for_adopt); };
+  const show = (p: ApprovalPolicy) => {
+    setPolicy(p); setRequired(p.required_approvals); setForAdopt(p.require_for_adopt); setProtectMain(p.protect_main);
+  };
   useEffect(() => { api.approvalPolicy(orgId).then(show).catch((e) => setError(e.message)); }, [orgId]);
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(""); setSaved(false);
-    try { show(await api.setApprovalPolicy(orgId, required, forAdopt)); setSaved(true); }
+    try { show(await api.setApprovalPolicy(orgId, required, forAdopt, protectMain)); setSaved(true); }
     catch (err) { setError((err as Error).message); }
   };
 
@@ -168,6 +171,10 @@ function ApprovalPolicySection({ orgId, manage }: { orgId: string; manage: boole
       <label className="small row gap">
         <input type="checkbox" checked={forAdopt} disabled={!manage} onChange={(e) => setForAdopt(e.target.checked)} />
         Require an approved version before a draft is adopted into main
+      </label>
+      <label className="small row gap">
+        <input type="checkbox" checked={protectMain} disabled={!manage} onChange={(e) => setProtectMain(e.target.checked)} />
+        Protect main: change it only by merging or adopting an approved branch (no direct edits, AI changes, imports or restores)
       </label>
       {manage && (
         <div className="row gap">

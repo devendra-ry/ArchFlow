@@ -250,7 +250,11 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   // Your role in the project's org (from the API). Viewers and reviewers get a read-only workspace; the API
   // and the collab server enforce the same rules, this only shapes the UI.
   const [role, setRole] = useState<Role | null>(null);
-  const readOnly = role !== null && !can(role, "edit");
+  const roleReadOnly = role !== null && !can(role, "edit");
+  // A protected main changes only by merging or adopting an approved branch: the canvas is locked, but you can
+  // still branch off it and merge into it.
+  const [protectedBranch, setProtectedBranch] = useState(false);
+  const readOnly = roleReadOnly || protectedBranch;
   const clipboard = useRef<{ nodes: ArchNode[]; edges: { source: string; target: string; protocol: string; label: string }[] } | null>(null);
   const wrapper = useRef<HTMLDivElement>(null);
 
@@ -301,7 +305,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   const refreshMeta = useCallback(() => {
     api.versions(pid).then(setVersions).catch(() => {});
     api.activity(pid, branch).then(setActivity).catch(() => {});
-    api.project(pid, branch).then((p) => { setBranches(p.branches); setHeadVersion(p.head_version); }).catch(() => {});
+    api.project(pid, branch).then((p) => { setBranches(p.branches); setHeadVersion(p.head_version); setProtectedBranch(p.protected); }).catch(() => {});
   }, [pid, branch]);
 
   // ---- initial load ----
@@ -311,6 +315,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       setBranches(p.branches);
       setHeadVersion(p.head_version);
       setRole(p.role);
+      setProtectedBranch(p.protected);
       // AI is on when the server or the org (its own keys) has a provider configured.
       api.health().then((h) => setAi({ available: p.ai_available, model: h.llm?.groups?.reasoning?.[0] ?? h.model }))
         .catch(() => setAi({ available: p.ai_available, model: "" }));
@@ -851,7 +856,8 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         </button>
         <ProjectSwitcher me={me} current={project} open={switcherOpen} onOpenChange={setSwitcherOpen}
           onOpen={onOpenProject} onHome={onExit} />
-        {readOnly && <span className="ro-badge" title={can(role, "review") ? "Your role can view and comment, but not edit" : "Your role can view, but not edit or comment"}>Read only · {role}</span>}
+        {protectedBranch && !roleReadOnly && <span className="ro-badge" title="Main changes only by merging or adopting an approved branch. Create a branch to edit.">Protected</span>}
+        {roleReadOnly && <span className="ro-badge" title={can(role, "review") ? "Your role can view and comment, but not edit" : "Your role can view, but not edit or comment"}>Read only · {role}</span>}
         <div className="branch">
           <Select value={branch} onChange={onBranch} aria-label="Branch" className="branch-select" menuWidth={240}
             options={(branches.some((b) => b.name === branch) ? branches : [...branches, { name: branch, base_version: null, created_at: "" }])
@@ -859,7 +865,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           {branch !== "main" && branches.some((b) => b.name === "main") && (
             <button className="small ghost" onClick={() => onBranch("main")} title="Switch back to the main branch"><Icon as={Undo2} size={12} /> main</button>
           )}
-          {readOnly ? null : newBranch === null ? (
+          {roleReadOnly ? null : newBranch === null ? (
             <button className="small ghost icon-btn" onClick={() => setNewBranch("experiment/")} title="New branch" aria-label="New branch"><Icon as={Plus} size={14} /></button>
           ) : (
             <form className="row gap" onSubmit={(e) => { e.preventDefault(); createBranch(newBranch.trim(), null); setNewBranch(null); }}>
@@ -1056,7 +1062,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         {tab === "versions" && (
           <VersionsPanel pid={pid} role={role} versions={versions} activity={activity} branch={branch} headVersion={headVersion} diff={diff}
             onCommit={commit} onDiff={showDiff} onRestore={restore} onBranchFrom={(v, name) => createBranch(name, v)} onReviewed={refreshMeta}
-            branches={branches} onMerge={readOnly ? undefined : setMergeSource} />
+            branches={branches} onMerge={roleReadOnly ? undefined : setMergeSource} />
         )}
         {tab === "decisions" && (
           <DecisionsPanel pid={pid} branches={branches} user={user} role={role ?? undefined} toast={toast}
