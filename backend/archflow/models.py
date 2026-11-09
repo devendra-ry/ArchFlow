@@ -7,6 +7,8 @@ MCP agent — goes through the same operation pipeline in ``ops.py``.
 
 from __future__ import annotations
 
+import re
+
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -90,6 +92,10 @@ class Requirement(Versioned):
     deleted: bool = False
 
 
+REQ_PREFIX_PATTERN = r"^[A-Z][A-Z0-9]{0,9}$"
+REQ_PREFIX_RE = re.compile(REQ_PREFIX_PATTERN[1:-1])
+
+
 class ProjectState(BaseModel):
     """The whole editable model of one branch."""
 
@@ -100,12 +106,14 @@ class ProjectState(BaseModel):
     # Highest REQ-n ever issued on this branch. It never goes down, so a permanently removed requirement's id is not
     # handed out again: its history rows and Jira/GitHub links are keyed by that id and would attach to the new one.
     requirement_seq: int = 0
+    # New requirement ids are "<prefix>-n" (e.g. PAY-001). Changing it keeps existing ids and continues the numbering.
+    requirement_prefix: str = Field("REQ", pattern=REQ_PREFIX_PATTERN)
 
 
 def requirement_number(rid: str) -> int:
-    """n for "REQ-n", else 0."""
+    """n for "<PREFIX>-n" (any project prefix, e.g. REQ-7 or PAY-012), else 0."""
     head, _, num = rid.partition("-")
-    return int(num) if head == "REQ" and num.isdigit() else 0
+    return int(num) if REQ_PREFIX_RE.fullmatch(head) and num.isdigit() else 0
 
 
 def keep_requirement_seq(new: ProjectState, *previous: ProjectState) -> ProjectState:

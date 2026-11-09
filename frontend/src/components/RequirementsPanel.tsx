@@ -131,6 +131,13 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
       toast?.(`⚠ ${(e as Error).message}`);
     }
   };
+  const prefix = state.requirement_prefix || "REQ";
+  const changePrefix = () => {
+    const next = window.prompt(`Prefix for new requirement ids (existing ids are kept). Now: ${prefix}-001`, prefix)?.trim().toUpperCase();
+    if (!next || next === prefix) return;
+    if (!/^[A-Z][A-Z0-9]{0,9}$/.test(next)) { toast("A prefix is 1–10 letters or digits, starting with a letter (e.g. PAY)."); return; }
+    send([{ op: "set_requirement_prefix", prefix: next }]);
+  };
   const add = (kind: Requirement["kind"]) =>
     send([{ op: "add_requirement", requirement: { title: kind === "functional" ? "New requirement" : "New non-functional requirement", kind } }]);
 
@@ -150,6 +157,7 @@ export function RequirementsPanel({ pid, branch, toast, onMemoryChanged, state, 
             <button className="small" onClick={() => setImporting(true)} title="Import requirements from a document (PDF, Word, Markdown, text)"><Icon as={Upload} size={14} /> Import</button>
             <button className="small" onClick={() => setMeeting(true)}
               title="Import requirements, decisions and action items from a meeting transcript or recording"><Icon as={Mic} size={14} /> Meeting</button>
+            <button className="small ghost mono" onClick={changePrefix} title="Change the prefix of new requirement ids">{prefix}-</button>
             {onJira && <button className="small" onClick={onJira} title="Push requirements to Jira, or pull Jira issues in as requirements">Jira <Icon as={ArrowUpDown} size={14} /></button>}
             {onGitHub && all.length > 0 && <button className="small" onClick={onGitHub} title="Preview, then push requirements to GitHub as issues">GitHub <Icon as={ExternalLink} size={14} /></button>}
           </div>

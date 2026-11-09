@@ -69,6 +69,8 @@ export interface ProjectState {
   nodes: Record<string, ArchNode>;
   edges: Record<string, ArchEdge>;
   requirements: Record<string, Requirement>;
+  /** New requirement ids are "<prefix>-n" (default REQ). */
+  requirement_prefix?: string;
 }
 
 export interface Project { id: string; name: string; description: string; created_at: string; org_id?: string }

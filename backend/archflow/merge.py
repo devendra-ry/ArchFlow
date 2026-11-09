@@ -179,6 +179,9 @@ class _Merger:
         self.names = {**{k: n.name for k, n in base.nodes.items()}, **{k: n.name for k, n in theirs.nodes.items()},
                       **{k: n.name for k, n in ours.nodes.items()}}
         self.out = MergeResult(state=keep_requirement_seq(ProjectState(rev=ours.rev), base, ours, theirs))
+        # the prefix: theirs if they changed it, else ours
+        self.out.state.requirement_prefix = (theirs.requirement_prefix if theirs.requirement_prefix
+                                             != base.requirement_prefix else ours.requirement_prefix)
 
     # -- resolutions
     def _pick(self, cid: str, ours: Any, theirs: Any, allow_custom: bool = True) -> Any:
@@ -434,6 +437,8 @@ def plan_ops(cur: ProjectState, new: ProjectState) -> list[dict[str, Any]]:
             ops.append({"op": "remove_edge", "id": eid})
             readd.add(eid)
     # 2. requirements first, so components can link to them
+    if new.requirement_prefix != cur.requirement_prefix:
+        ops.append({"op": "set_requirement_prefix", "prefix": new.requirement_prefix})
     for rid, r in new.requirements.items():
         old = cur.requirements.get(rid)
         if old is None:

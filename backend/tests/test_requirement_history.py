@@ -85,6 +85,27 @@ def test_a_purged_id_is_never_issued_again():
     assert result.state.requirement_seq == 2
 
 
+def test_a_project_can_number_requirements_with_its_own_prefix():
+    from archflow.merge import merge_states, plan_ops
+
+    b = base()
+    s, summary = apply_ops(b, [{"op": "set_requirement_prefix", "prefix": "pay"}])
+    assert s.requirement_prefix == "PAY" and summary == ["new requirement ids start with PAY-"]
+    with pytest.raises(OpError, match="prefix"):
+        apply_ops(s, [{"op": "set_requirement_prefix", "prefix": "9-bad"}])
+    s, _ = apply_ops(s, [{"op": "add_requirement", "requirement": {"title": "Refunds"}}])
+    assert "PAY-003" in s.requirements and "REQ-001" in s.requirements  # numbering continues, old ids kept
+    # a branch that changed the prefix carries it through a merge (and the merge's ops)
+    result = merge_states(b, b, s)
+    assert result.state.requirement_prefix == "PAY"
+    merged, _ = apply_ops(b, plan_ops(b, result.state))
+    assert merged.requirement_prefix == "PAY" and "PAY-003" in merged.requirements
+    # the live document does not carry the prefix: the branch keeps its own
+    live, _ = collab_sync.sanitize(s.model_dump())
+    merged, _ = collab_sync.merge_projection(s, apply_ops(live, [{"op": "add_node", "node": {"name": "X"}}])[0])
+    assert merged.requirement_prefix == "PAY"
+
+
 def test_add_edge_with_an_invalid_field_is_a_client_error_not_a_crash():
     with pytest.raises(OpError, match="invalid connection"):
         apply_ops(base(), [{"op": "add_edge", "edge": {"source": "orders-db", "target": "order-service", "protocol": 5}}])

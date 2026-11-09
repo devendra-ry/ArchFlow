@@ -16,6 +16,7 @@ Operation shapes::
     {"op": "remove_requirement", "id": "REQ-001"}    # soft delete: marks it deleted, keeps its links
     {"op": "restore_requirement", "id": "REQ-001"}   # undoes a soft delete
     {"op": "purge_requirement", "id": "REQ-001"}     # hard delete of a deleted requirement (admins; see main.py)
+    {"op": "set_requirement_prefix", "prefix": "PAY"} # new requirement ids become PAY-n (existing ids are kept)
     {"op": "mark_reviewed", "id": "<node id or name>", "requirement_id": "REQ-001"}  # omit requirement_id: all
 
 ``base_rev`` is the project revision the client last saw. If a field in ``changes`` was
@@ -38,7 +39,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from .models import PROTECTED_FIELDS, Edge, Node, ProjectState, Requirement, requirement_number
+from .models import PROTECTED_FIELDS, REQ_PREFIX_RE, Edge, Node, ProjectState, Requirement, requirement_number
 
 REVIEWED = "reviewed:"  # node.field_revs key prefix: revision at which a linked requirement was last reviewed
 
@@ -95,11 +96,11 @@ def new_edge_id(state: ProjectState) -> str:
             return candidate
 
 
-def next_requirement_id(state: ProjectState) -> str:
-    """The next REQ-n, past every id present and every id ever issued (``requirement_seq``), so a purged id is never
-    reused."""
-    highest = max([state.requirement_seq, *(requirement_number(rid) for rid in state.requirements)])
-    return f"REQ-{highest + 1:03d}"
+def next_requirement_id(state: ProjectState, after: int = 0) -> str:
+    """The next <prefix>-n, past every id present, every id ever issued (``requirement_seq``) and ``after``, so a
+    purged id is never reused."""
+    highest = max([state.requirement_seq, after, *(requirement_number(rid) for rid in state.requirements)])
+    return f"{state.requirement_prefix}-{highest + 1:03d}"
 
 
 def resolve_node(state: ProjectState, ref: str | None) -> Node | None:
@@ -412,6 +413,14 @@ def apply_ops(state: ProjectState, ops: list[dict[str, Any]]) -> tuple[ProjectSt
                     node.rev = new_rev
                 node.field_revs.pop(REVIEWED + req.id, None)
             summary.append(f"permanently removed {req.id} '{req.title}'")
+
+        elif kind == "set_requirement_prefix":
+            prefix = str(op.get("prefix") or "").strip().upper()
+            if not REQ_PREFIX_RE.fullmatch(prefix):
+                raise OpError("a requirement prefix is 1-10 letters or digits, starting with a letter (e.g. PAY)")
+            if prefix != st.requirement_prefix:
+                st.requirement_prefix = prefix
+                summary.append(f"new requirement ids start with {prefix}-")
 
         elif kind == "mark_reviewed":
             node = resolve_node(st, op.get("id"))

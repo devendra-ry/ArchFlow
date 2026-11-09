@@ -5,6 +5,8 @@ export interface EntityLinks {
   components: { id: string; name: string }[];
   onComponent?: (id: string) => void;
   onRequirement?: (id: string) => void;
+  /** Requirement id prefixes in use (default ["REQ"]): "<prefix>-n" in text links to the requirement. */
+  requirementPrefixes?: string[];
 }
 
 interface Linker {
@@ -27,7 +29,8 @@ function useLinker(links?: EntityLinks): Linker {
       exact.set(c.name, c.id);
     }
     const names = [...byName.keys()].sort((a, b) => b.length - a.length).map(escapeRe);
-    const alts = [String.raw`REQ-\d+`, ...names];
+    const prefixes = links?.requirementPrefixes?.length ? links.requirementPrefixes : ["REQ"];
+    const alts = [`(?:${prefixes.map(escapeRe).join("|")})-\\d+`, ...names];
     const re = links ? new RegExp(String.raw`(?<![\w-])(${alts.join("|")})(?![\w-])`, "g") : null;
     return { re, byName, exact, links };
   }, [links]);

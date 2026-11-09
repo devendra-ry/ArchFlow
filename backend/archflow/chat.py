@@ -21,8 +21,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any
 
 from . import checklists, option_review
-from .models import NODE_TYPES, ProjectState, active_requirements
-from .ops import slugify, unique_slug
+from .models import NODE_TYPES, ProjectState, active_requirements, requirement_number
+from .ops import next_requirement_id, slugify, unique_slug
 
 log = logging.getLogger("archflow.chat")
 
@@ -731,8 +731,7 @@ def architecture_ops(state: ProjectState, option: dict[str, Any], requirements: 
 
     # Requirements: skip titles that already exist; pre-assign IDs so components can link to them.
     existing = {r.title.strip().lower(): r.id for r in active_requirements(state).values()}
-    nums = [int(m.group(1)) for rid in state.requirements if (m := re.match(r"REQ-(\d+)$", rid))]
-    n = max(nums) if nums else 0
+    issued = 0  # ids pre-assigned below; past purged ids too (next_requirement_id honours requirement_seq)
     linked: list[tuple[str, dict]] = []  # (requirement id, requirement) for traceability
     for r in requirements:
         title = (r.get("title") or "").strip()
@@ -741,8 +740,8 @@ def architecture_ops(state: ProjectState, option: dict[str, Any], requirements: 
         if title.lower() in existing:
             linked.append((existing[title.lower()], r))
             continue
-        n += 1
-        rid = f"REQ-{n:03d}"
+        rid = next_requirement_id(state, issued)
+        issued = requirement_number(rid)
         existing[title.lower()] = rid
         linked.append((rid, r))
         ops.append({"op": "add_requirement", "requirement": {

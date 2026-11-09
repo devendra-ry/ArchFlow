@@ -748,11 +748,14 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   focusRef.current = focusNodes;
   const componentNames = Object.values(state?.nodes ?? {}).filter((n) => n.type !== "note")
     .map((n) => `${n.id}\u0000${n.name}`).join("\u0001");
+  const reqPrefixes = [...new Set([state?.requirement_prefix || "REQ",
+    ...Object.keys(state?.requirements ?? {}).map((id) => id.split("-")[0])])].sort().join(",");
   const entityLinks: EntityLinks = useMemo(() => ({
     components: componentNames ? componentNames.split("\u0001").map((s) => { const [id, name] = s.split("\u0000"); return { id, name }; }) : [],
     onComponent: (id: string) => focusRef.current([id]),
     onRequirement: (id: string) => { setTraced(id); setTab("requirements"); },
-  }), [componentNames]);
+    requirementPrefixes: reqPrefixes.split(","),
+  }), [componentNames, reqPrefixes]);
 
   const onSearchEnter = () => {
     if (highlight?.size) flow.fitView({ nodes: [...highlight].map((id) => ({ id })), padding: 0.5, duration: 400, maxZoom: 1.2 });

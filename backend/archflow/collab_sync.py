@@ -155,6 +155,7 @@ def merge_projection(current: ProjectState, incoming: ProjectState) -> tuple[Pro
         return current, []
     new_rev = current.rev + 1
     merged = keep_requirement_seq(incoming.model_copy(deep=True), current)  # the live document doesn't carry it
+    merged.requirement_prefix = current.requirement_prefix  # nor this
     merged.rev = new_rev
     for coll in COLLECTIONS:
         prev = getattr(current, coll)
