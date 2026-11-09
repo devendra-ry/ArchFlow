@@ -17,6 +17,7 @@ import pytest  # noqa: E402
 from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
 
 from archflow import mfa, sso  # noqa: E402
+from archflow.auth import hash_secret as auth_hash  # noqa: E402
 from archflow.main import create_app  # noqa: E402
 from archflow.store import DEFAULT_ORG_ID, Store  # noqa: E402
 
@@ -357,6 +358,33 @@ def test_sso_sign_in_provisions_the_user_just_in_time(app, owner, idp):
     assert r.headers["location"] == "http://localhost:5173/#/"
     me2 = c2.get("/api/me").json()
     assert me2["user"]["id"] == uid and me2["orgs"][0]["role"] == "developer"
+
+
+def test_sso_takes_over_a_pre_registered_password_account(app, owner, idp):
+    """Sign-up does not verify emails: someone may register jane@acme.com first. When Acme's IdP proves who owns the
+    address, the squatter's password, sessions and tokens must stop working before the account joins the org."""
+    configure_sso(owner)
+    squatter = new_client(app)
+    r = squatter.post("/api/auth/signup", json={"email": "jane@acme.com", "name": "Jane", "password": PASSWORD})
+    assert r.status_code == 201, r.text
+    own_org = r.json()["orgs"][0]["id"]
+    pat = squatter.post(f"/api/orgs/{own_org}/tokens", json={"name": "cli", "access": "read"})
+    assert pat.status_code == 201, pat.text
+    store = app.state.authz.store
+    assert store.get_token(auth_hash(pat.json()["token"])) is not None
+
+    jane, r = sso_sign_in(app, idp, "jane@acme.com")
+    assert r.headers["location"] == "http://localhost:5173/#/"
+    me = jane.get("/api/me").json()
+    assert DEFAULT_ORG_ID in {o["id"] for o in me["orgs"]}
+    assert squatter.get("/api/me").status_code == 401  # the old session ended
+    assert new_client(app).post("/api/auth/login",
+                                json={"email": "jane@acme.com", "password": PASSWORD}).status_code == 401
+    assert store.get_token(auth_hash(pat.json()["token"])) is None  # tokens revoked
+
+    # Later SSO sign-ins (already a member) leave the new session alone.
+    _, r = sso_sign_in(app, idp, "jane@acme.com")
+    assert jane.get("/api/me").status_code == 200
 
 
 @pytest.mark.parametrize("claims, message", [

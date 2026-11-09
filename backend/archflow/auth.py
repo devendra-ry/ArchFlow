@@ -178,7 +178,8 @@ class ArchFlowOAuthProvider:
                                     org_id=rec["org_id"], user_name=rec["user_name"], user_id=rec["user_id"])
 
     async def exchange_refresh_token(self, client: OAuthClientInformationFull, refresh_token, scopes: list[str]) -> OAuthToken:
-        self.store.revoke_token(hash_secret(refresh_token.token))
+        if not self.store.revoke_token(hash_secret(refresh_token.token)):  # lost a race with a concurrent refresh
+            raise TokenError(error="invalid_grant", error_description="refresh token already used or revoked")
         granted = [s for s in (scopes or refresh_token.scopes) if s in refresh_token.scopes] or refresh_token.scopes
         return self._issue(client.client_id, refresh_token.org_id, refresh_token.user_name, refresh_token.user_id,
                            granted, refresh_token.resource)

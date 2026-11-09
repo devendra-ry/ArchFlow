@@ -191,7 +191,9 @@ jobs:
         working-directory: collab
       - name: Start API and collab server
         run: |
-          (cd backend && nohup uv run uvicorn archflow.main:app --port 8000 > /tmp/api.log 2>&1 &)
+          # Run the venv's uvicorn directly: a backgrounded `uv run` keeps holding the uv cache lock, and
+          # setup-uv's post-job `uv cache prune` then times out whenever uv.lock changed (cache miss).
+          (cd backend && nohup .venv/bin/uvicorn archflow.main:app --port 8000 > /tmp/api.log 2>&1 &)
           (cd collab && nohup npm start > /tmp/collab.log 2>&1 &)
           for i in $(seq 1 60); do
             curl -sf http://localhost:8000/api/health > /dev/null && curl -s http://localhost:1234 > /dev/null && exit 0

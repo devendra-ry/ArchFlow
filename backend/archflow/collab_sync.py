@@ -76,7 +76,8 @@ def verify_ticket(ticket: str, doc: str | None = None, now: float | None = None)
         claims = json.loads(_unb64url(body))
     except (ValueError, json.JSONDecodeError) as exc:
         raise ValueError("malformed ticket") from exc
-    if not isinstance(claims, dict) or float(claims.get("exp", 0)) < (now if now is not None else time.time()):
+    exp = claims.get("exp") if isinstance(claims, dict) else None
+    if not isinstance(exp, (int, float)) or isinstance(exp, bool) or exp < (now if now is not None else time.time()):
         raise ValueError("ticket expired")
     if doc is not None and claims.get("doc") != doc:
         raise ValueError("ticket is for another document")

@@ -342,6 +342,15 @@ class Store:
         with self._s() as s:
             s.execute(update(UserSession).where(UserSession.token_hash == token_hash).values(revoked=True))
 
+    def revoke_user_sessions(self, user_id: str) -> None:
+        """End every browser session of ``user_id``."""
+        with self._s() as s:
+            s.execute(update(UserSession).where(UserSession.user_id == user_id).values(revoked=True))
+
+    def set_password_hash(self, user_id: str, password_hash: str) -> None:
+        with self._s() as s:
+            s.execute(update(User).where(User.id == user_id).values(password_hash=password_hash))
+
     # ---- invites --------------------------------------------------------------
     def create_invite(self, org_id: str, token_hash: str, role: str, expires_at: float, email: str | None = None,
                       created_by: str | None = None) -> dict[str, Any]:
@@ -856,9 +865,11 @@ class Store:
         with self._s() as s:
             s.execute(update(ApiToken).where(ApiToken.token_hash == token_hash).values(last_used_at=now()))
 
-    def revoke_token(self, token_hash: str) -> None:
+    def revoke_token(self, token_hash: str) -> bool:
+        """Revoke a token; True only for the call that actually revoked it (so rotation is single use)."""
         with self._s() as s:
-            s.execute(update(ApiToken).where(ApiToken.token_hash == token_hash).values(revoked=True))
+            return s.execute(update(ApiToken).where(ApiToken.token_hash == token_hash, ApiToken.revoked.is_(False))
+                             .values(revoked=True)).rowcount > 0
 
     def revoke_token_id(self, token_id: str) -> bool:
         with self._s() as s:
@@ -868,6 +879,11 @@ class Store:
     def revoke_user_tokens(self, org_id: str, user_id: str) -> None:
         with self._s() as s:
             s.execute(update(ApiToken).where(ApiToken.org_id == org_id, ApiToken.user_id == user_id).values(revoked=True))
+
+    def revoke_all_user_tokens(self, user_id: str) -> None:
+        """Revoke the user's MCP tokens and PATs in every org."""
+        with self._s() as s:
+            s.execute(update(ApiToken).where(ApiToken.user_id == user_id).values(revoked=True))
 
     def list_tokens(self, org_id: str, kind: str | None = None) -> list[dict[str, Any]]:
         q = select(ApiToken).where(ApiToken.org_id == org_id, ApiToken.revoked.is_(False))

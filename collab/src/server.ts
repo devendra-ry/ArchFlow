@@ -14,6 +14,7 @@
  */
 import { Server } from "@hocuspocus/server";
 
+import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { fileURLToPath } from "node:url";
 import * as Y from "yjs";
@@ -38,6 +39,14 @@ interface Ctx { user: { id?: string; name: string; color: string }; server?: boo
 const actors = new Map<string, Set<string>>(); // documentName → people who edited since the last store
 
 const internal = { "x-internal-token": INTERNAL_TOKEN };
+const INTERNAL_TOKEN_BYTES = Buffer.from(INTERNAL_TOKEN, "utf8");
+
+/** Constant-time check of the shared secret (the patch endpoint is reachable through the public /collab route). */
+function internalTokenOk(given: string | string[] | undefined): boolean {
+  if (typeof given !== "string") return false;
+  const g = Buffer.from(given, "utf8");
+  return g.length === INTERNAL_TOKEN_BYTES.length && timingSafeEqual(g, INTERNAL_TOKEN_BYTES);
+}
 const enc = (name: string) => name.split("/").map(encodeURIComponent).join("/");
 
 async function api(path: string, init: RequestInit = {}) {
@@ -113,7 +122,7 @@ const server = new Server<Ctx>({
     }
     const m = /^\/internal\/docs\/(.+)\/patch$/.exec(url.pathname);
     if (!m || request.method !== "POST") return;
-    if (request.headers["x-internal-token"] !== INTERNAL_TOKEN) {
+    if (!internalTokenOk(request.headers["x-internal-token"])) {
       send(response, 401, { error: "invalid internal token" });
       throw null;
     }
