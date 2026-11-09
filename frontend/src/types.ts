@@ -122,6 +122,12 @@ export interface AISettings {
 }
 export interface AITestResult { ok: boolean; group: AIGroup; model?: string; chain?: string[]; latency_ms?: number; reply?: string; error?: string }
 
+/** What a sign-in rule change would block (GET /orgs/{id}/auth-settings/impact). */
+export interface AuthImpact {
+  members_without_mfa: string[];
+  members_needing_sso: string[];
+  tokens_blocked: { id: string; kind: "pat" | "refresh"; name: string; user_name: string; reason: string }[];
+}
 export interface ApiToken {
   id: string; kind: "pat" | "refresh"; name: string; user_name: string; access: "read" | "write";
   client_name: string; created_at: string; expires_at: number | null; last_used_at: string | null;

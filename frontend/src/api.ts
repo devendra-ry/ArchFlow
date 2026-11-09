@@ -1,4 +1,4 @@
-import type { Activity, Analysis, ArchOption, Branch, ChatCard, ChatTurn, ApiToken, Catalog, Diff, Op, Org, Project, ProjectState, Version } from "./types";
+import type { Activity, Analysis, ArchOption, AuthImpact, Branch, ChatCard, ChatTurn, ApiToken, Catalog, Diff, Op, Org, Project, ProjectState, Version } from "./types";
 import type { AppNotification, Comment, CommentTarget, Decision, Evaluation } from "./types";
 import type { AIConfig, AIGroup, AIProvider, AISettings, AITestResult, Invite, InviteInfo, Me, Member, Role } from "./types";
 import type { ComponentViews, IntakeNote, IntakeResult, IntakeStep, LldResult, RequirementRevision, MergePreview, MergeResolution, MergeResult, MergeSuggestion, Diagram, DiagramInfo } from "./types";
@@ -215,6 +215,10 @@ export const api = {
   orgs: () => call<Org[]>("GET", "/orgs"),
   mcpInfo: () => call<{ url: string; issuer: string; scopes: string[] }>("GET", "/mcp-info"),
   tokens: (org: string) => call<ApiToken[]>("GET", `/orgs/${org}/tokens`),
+  authImpact: (org: string, rules: { require_mfa?: boolean; require_sso?: boolean } = {}) =>
+    call<AuthImpact>("GET", `/orgs/${org}/auth-settings/impact`, undefined,
+      Object.fromEntries(Object.entries(rules).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))),
+  revokeBlockedTokens: (org: string) => call<{ revoked: number }>("POST", `/orgs/${org}/auth-settings/revoke-blocked-tokens`),
   createToken: (org: string, name: string, access: "read" | "write", expires_in_days: number | null, project_ids: string[] | null = null) =>
     call<ApiToken & { token: string }>("POST", `/orgs/${org}/tokens`, { name, access, expires_in_days, project_ids }),
   revokeToken: (org: string, id: string) => call<null>("DELETE", `/orgs/${org}/tokens/${id}`),

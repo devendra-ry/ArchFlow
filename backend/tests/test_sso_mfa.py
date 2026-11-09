@@ -468,3 +468,14 @@ def test_org_can_require_sso(app, owner, idp):
     assert sso_dev.get(f"/api/orgs/{other}/members").status_code == 404  # not a member there
     # Leaving is still allowed.
     assert dev.delete(f"/api/orgs/org-default/members/{dev.get('/api/me').json()['user']['id']}").status_code == 204
+
+
+def test_sign_in_rule_impact_lists_blocked_members_and_tokens(app, owner):
+    dev = member_client(app, owner, "developer", "impact-dev@example.com")
+    owner.post("/api/orgs/org-default/tokens", json={"name": "ci", "access": "read"})
+    assert dev.get("/api/orgs/org-default/auth-settings/impact").status_code == 403
+    i = owner.get("/api/orgs/org-default/auth-settings/impact", params={"require_mfa": "true"}).json()
+    assert len(i["members_without_mfa"]) >= 2 and any(t["name"] == "ci" for t in i["tokens_blocked"])
+    # the current rules block nothing, so nothing is revoked
+    assert owner.get("/api/orgs/org-default/auth-settings/impact").json()["tokens_blocked"] == []
+    assert owner.post("/api/orgs/org-default/auth-settings/revoke-blocked-tokens").json() == {"revoked": 0}

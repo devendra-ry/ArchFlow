@@ -445,6 +445,59 @@ def register_routes(app: FastAPI, store: Any, authz: Any) -> None:
             return {"ok": False, "detail": str(exc)}
         return {"ok": True, "detail": f"Found {doc['issuer']} with {len(keys.get('keys') or [])} signing key(s)."}
 
+    def impact(org_id: str, require_mfa: bool, require_sso: bool) -> dict[str, Any]:
+        """Who and which API tokens the given rules block, by the same policy_block the web and MCP apply."""
+        current = store.get_auth_settings(org_id) or {}
+        rules = {**current, "require_mfa": require_mfa, "require_sso": require_sso,
+                 "sso_enabled": bool(current.get("sso_enabled")) or require_sso}
+        members = store.list_members(org_id)
+        role_of = {m["user_id"]: m["role"] for m in members}
+        mfa_of = {m["user_id"]: store.mfa_enabled(m["user_id"]) for m in members}
+
+        def blocked(user_id: str, auth_method: str) -> str | None:
+            role = role_of.get(user_id)
+            if role is None:
+                return None
+            if rules["sso_enabled"] and rules["require_sso"] and role != "owner" and auth_method != f"sso:{org_id}":
+                return "not granted through SSO"
+            if rules["require_mfa"] and not mfa_of.get(user_id):
+                return "user has no two-step sign-in"
+            return None
+
+        tokens = []
+        for t in store.list_tokens(org_id):
+            if t["kind"] == "access":
+                continue  # short-lived; revoked with their app's refresh token
+            reason = blocked(t["user_id"] or "", t.get("auth_method") or "password")
+            if reason:
+                tokens.append({"id": t["id"], "kind": t["kind"], "name": t["name"] or t["client_id"] or "",
+                               "user_name": t["user_name"], "reason": reason})
+        return {
+            "members_without_mfa": [m["name"] for m in members if require_mfa and not mfa_of[m["user_id"]]],
+            "members_needing_sso": [m["name"] for m in members if require_sso and m["role"] != "owner"],
+            "tokens_blocked": tokens,
+        }
+
+    @app.get("/api/orgs/{org_id}/auth-settings/impact")
+    def get_impact(require_mfa: bool | None = None, require_sso: bool | None = None, a: Access = Depends(org_admin)):
+        """Preview of a rule change (defaults: the current rules): members who will be blocked, and API tokens that
+        stop working, so an admin can warn people or revoke the tokens in one go."""
+        current = store.get_auth_settings(a.org_id) or {}
+        return impact(a.org_id, bool(current.get("require_mfa")) if require_mfa is None else require_mfa,
+                      bool(current.get("require_sso")) if require_sso is None else require_sso)
+
+    @app.post("/api/orgs/{org_id}/auth-settings/revoke-blocked-tokens")
+    def revoke_blocked_tokens(a: Access = Depends(org_admin)):
+        """Revoke the API tokens the CURRENT rules block (they fail on every call anyway); returns how many."""
+        current = store.get_auth_settings(a.org_id) or {}
+        blocked = impact(a.org_id, bool(current.get("require_mfa")), bool(current.get("require_sso")))["tokens_blocked"]
+        apps = {(t["client_id"], t["user_id"]) for b in blocked if (t := store.get_token_by_id(b["id"])) and t["kind"] == "refresh"}
+        revoked = sum(1 for b in blocked if store.revoke_token_id(b["id"]))
+        for t in store.list_tokens(a.org_id, "access"):  # end those apps' current sessions too
+            if (t["client_id"], t["user_id"]) in apps:
+                store.revoke_token_id(t["id"])
+        return {"revoked": revoked}
+
     @app.put("/api/orgs/{org_id}/auth-settings/mfa")
     def put_mfa_policy(body: MfaPolicyIn, a: Access = Depends(org_admin)):
         if body.require_mfa and not store.mfa_enabled(a.user["id"]):

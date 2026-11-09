@@ -1,7 +1,7 @@
 import { Brand } from "./Logo";
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ROLES, type AuthSettings, type MfaStatus, type ProjectRole, type ProjectRoles, type Role } from "../types";
+import { ROLES, type AuthImpact, type AuthSettings, type MfaStatus, type ProjectRole, type ProjectRoles, type Role } from "../types";
 import { Copy } from "./ConnectDialog";
 import { Modal } from "./OrgDialogs";
 import { Select } from "./Select";
@@ -138,13 +138,39 @@ export function SignInSettingsDialog({ orgId, orgName, role, onClose }: { orgId:
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState<AuthImpact | null>(null);  // what the CURRENT rules block
+  const [ssoPreview, setSsoPreview] = useState<AuthImpact | null>(null);  // what ticking "Require SSO" would block
+
+  const refreshBlocked = () => { api.authImpact(orgId).then(setBlocked).catch(() => {}); };
+  const describe = (i: AuthImpact, rule: "mfa" | "sso") => {
+    const people = rule === "mfa" ? i.members_without_mfa : i.members_needing_sso;
+    const parts = [];
+    if (people.length) parts.push(`${people.length} member${people.length > 1 ? "s" : ""} (${people.slice(0, 5).join(", ")}${people.length > 5 ? ", …" : ""}) `
+      + (rule === "mfa" ? "have no two-step sign-in yet and will be asked to turn it on" : "will have to sign in with SSO"));
+    if (i.tokens_blocked.length) parts.push(`${i.tokens_blocked.length} API token${i.tokens_blocked.length > 1 ? "s" : ""} or connected app${i.tokens_blocked.length > 1 ? "s" : ""} will stop working`);
+    return parts.join("; ");
+  };
+  const setRequireMfa = (on: boolean) => run(async () => {
+    if (on) {
+      const i = await api.authImpact(orgId, { require_mfa: true, require_sso: s?.sso.require_sso });
+      const what = describe(i, "mfa");
+      if (what && !window.confirm(`Require two-step sign-in?\n\n${what}.`)) return;
+    }
+    show(await api.setRequireMfa(orgId, on));
+    refreshBlocked();
+  });
+  const toggleRequireSso = (on: boolean) => {
+    setRequireSso(on);
+    setSsoPreview(null);
+    if (on) api.authImpact(orgId, { require_mfa: s?.require_mfa, require_sso: true }).then(setSsoPreview).catch(() => {});
+  };
 
   const show = (a: AuthSettings) => {
     setS(a);
     setEnabled(a.sso.enabled || !a.sso.issuer); setIssuer(a.sso.issuer); setClientId(a.sso.client_id);
     setDomains(a.sso.domains.join(", ")); setDefaultRole(a.sso.default_role); setRequireSso(a.sso.require_sso); setSecret("");
   };
-  useEffect(() => { api.authSettings(orgId).then(show).catch((e) => setError(e.message)); }, [orgId]);
+  useEffect(() => { api.authSettings(orgId).then(show).catch((e) => setError(e.message)); refreshBlocked(); }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = async (fn: () => Promise<void>) => {
     setError(""); setNote(""); setBusy(true);
@@ -158,6 +184,8 @@ export function SignInSettingsDialog({ orgId, orgName, role, onClose }: { orgId:
         domains: domains.split(/[\s,]+/).filter(Boolean), default_role: defaultRole, require_sso: requireSso,
       }));
       setNote("Saved");
+      setSsoPreview(null);
+      refreshBlocked();
     });
   };
 
@@ -168,8 +196,7 @@ export function SignInSettingsDialog({ orgId, orgName, role, onClose }: { orgId:
           <section>
             <h4>Two-step sign-in</h4>
             <label className="small row gap">
-              <input type="checkbox" checked={s.require_mfa} disabled={busy}
-                onChange={(e) => run(async () => show(await api.setRequireMfa(orgId, e.target.checked)))} />
+              <input type="checkbox" checked={s.require_mfa} disabled={busy} onChange={(e) => setRequireMfa(e.target.checked)} />
               Require two-step sign-in for every member
             </label>
             <p className="muted small">Members without it are asked to turn it on before they can open this organization.</p>
@@ -202,9 +229,12 @@ export function SignInSettingsDialog({ orgId, orgName, role, onClose }: { orgId:
                   .map((r) => ({ value: r, label: r }))} />
             </label>
             <label className="small row gap">
-              <input type="checkbox" checked={requireSso} disabled={!enabled} onChange={(e) => setRequireSso(e.target.checked)} />
+              <input type="checkbox" checked={requireSso} disabled={!enabled} onChange={(e) => toggleRequireSso(e.target.checked)} />
               Require SSO (no password sign-in for this organization; owners can still use a password)
             </label>
+            {ssoPreview && requireSso && !s.sso.require_sso && describe(ssoPreview, "sso") && (
+              <p className="notice small" role="status">When you save: {describe(ssoPreview, "sso")}.</p>
+            )}
             {!s.secrets_enabled && <p className="error small">The server cannot store secrets yet: set ARCHFLOW_SECRET_KEY.</p>}
             <div className="row gap wrap">
               <button className="primary small" disabled={busy}>Save</button>
@@ -215,6 +245,19 @@ export function SignInSettingsDialog({ orgId, orgName, role, onClose }: { orgId:
               {note && <span className="small ok">{note}</span>}
             </div>
           </form>
+          {!!blocked?.tokens_blocked.length && (
+            <section className="notice">
+              <p className="small"><b>{blocked.tokens_blocked.length} API token{blocked.tokens_blocked.length > 1 ? "s" : ""} or connected
+                app{blocked.tokens_blocked.length > 1 ? "s" : ""}</b> no longer meet these rules and fail on every call:{" "}
+                {blocked.tokens_blocked.slice(0, 4).map((t) => `${t.name || t.kind} (${t.user_name}, ${t.reason})`).join("; ")}
+                {blocked.tokens_blocked.length > 4 ? "; …" : ""}.</p>
+              <button className="small" disabled={busy} onClick={() => run(async () => {
+                const r = await api.revokeBlockedTokens(orgId);
+                setNote(`Revoked ${r.revoked} token${r.revoked === 1 ? "" : "s"}`);
+                refreshBlocked();
+              })}>Revoke them</button>
+            </section>
+          )}
         </div>
       )}
       {error && <p className="error small" role="alert">{error}</p>}
