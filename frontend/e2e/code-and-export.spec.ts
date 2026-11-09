@@ -32,7 +32,16 @@ test("get the diagram: export PNG, SVG and the interactive HTML", async ({ page 
     const path = await file.path();
     const bytes = readFileSync(path);
     expect(bytes.length).toBeGreaterThan(1000);
-    if (kind === "svg") expect(bytes.toString("utf8")).toContain("<svg");
+    if (kind === "svg") {
+      const svg = bytes.toString("utf8");
+      expect(svg).toContain("<svg");
+      // Connections keep their paint: html-to-image never styles an <svg>'s children, so without inlined styles
+      // every edge was invisible. Size stays well under the ~2 MB at which Chromium on Windows cancelled the download.
+      const edges = svg.match(/<path[^>]*react-flow__edge-path[^>]*>/g) ?? [];
+      expect(edges.length).toBeGreaterThan(0);
+      expect(edges.every((e) => /stroke:\s*rgb/.test(e))).toBe(true);
+      expect(bytes.length).toBeLessThan(1_000_000);
+    }
     if (kind === "html") expect(bytes.toString("utf8")).toMatch(/WhatsApp/);
   }
 });
