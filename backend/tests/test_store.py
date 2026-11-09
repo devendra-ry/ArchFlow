@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from archflow.db.types import to_seconds
 from archflow.models import ProjectState
 from archflow.ops import apply_ops
 from archflow.store import DEFAULT_ORG_ID, Store
@@ -364,13 +365,30 @@ def test_sqlite_migrates_pre_org_db(tmp_path):
     Store(path).close()  # re-opening an already-migrated DB is a no-op
 
 
+def test_created_at_is_stored_precise_and_returned_to_the_second(tmp_path):
+    """SQLite keeps microseconds (so rows created in the same second sort in order); the store returns whole seconds.
+    Comparing a raw column with store output therefore needs to_seconds, as the dev-DB test below does."""
+    path = tmp_path / "archflow.db"
+    store = Store(path)
+    pid = store.create_project("Timestamps")["id"]
+    returned = {p["id"]: p["created_at"] for p in store.list_projects()}[pid]
+    store.close()
+    raw = sqlite3.connect(path)
+    stored = raw.execute("SELECT created_at FROM projects WHERE id = ?", (pid,)).fetchone()[0]
+    raw.close()
+    assert "." in stored, stored  # microseconds kept on disk
+    assert "." not in returned and returned.endswith("+00:00"), returned  # whole seconds, UTC, from the store
+    assert to_seconds(stored) == returned
+
+
 @pytest.mark.skipif(not DEV_DB.exists(), reason="no dev DB at backend/data/archflow.db")
 def test_sqlite_migrates_copy_of_dev_db(tmp_path):
     """Migrate a COPY of the real dev DB; the original is never opened for writing."""
     copy = tmp_path / "archflow.db"
     shutil.copy2(DEV_DB, copy)
     raw = sqlite3.connect(copy)
-    before = {r[0]: r for r in raw.execute("SELECT id, name, description, created_at FROM projects")}
+    # Stored with microseconds (newer databases) or to the second (older ones); the store returns seconds either way.
+    before = {r[0]: (*r[:3], to_seconds(r[3])) for r in raw.execute("SELECT id, name, description, created_at FROM projects")}
     cols = {r[1] for r in raw.execute("PRAGMA table_info(projects)")}
     orgs_before = ({r[0]: r[1] for r in raw.execute("SELECT id, org_id FROM projects")}
                    if "org_id" in cols else {pid: DEFAULT_ORG_ID for pid in before})
