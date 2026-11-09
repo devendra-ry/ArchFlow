@@ -1,4 +1,4 @@
-import type { Activity, Analysis, ArchOption, AuthImpact, Branch, ChatCard, ChatTurn, ApiToken, Catalog, Diff, Op, Org, Project, ProjectState, Version } from "./types";
+import type { SearchHit, Activity, Analysis, ArchOption, AuthImpact, Branch, ChatCard, ChatTurn, ApiToken, Catalog, Diff, Op, Org, Project, ProjectState, Version } from "./types";
 import type { AppNotification, Comment, CommentTarget, Decision, Evaluation } from "./types";
 import type { AIConfig, AIGroup, AIProvider, AISettings, AITestResult, Invite, InviteInfo, Me, Member, Role } from "./types";
 import type { ComponentViews, IntakeNote, IntakeResult, IntakeStep, LldResult, RequirementRevision, MergePreview, MergeResolution, MergeResult, MergeSuggestion, Diagram, DiagramInfo } from "./types";
@@ -226,6 +226,7 @@ export const api = {
   projects: (org_id?: string) => call<Project[]>("GET", "/projects", undefined, org_id ? { org_id } : undefined),
   createProject: (name: string, template: string, org_id: string, description = "") =>
     call<Project>("POST", "/projects", { name, template, description, org_id }),
+  search: (q: string) => call<{ query: string; results: SearchHit[]; total: number }>("GET", "/search", undefined, { q }),
   deleteProject: (pid: string) => call<null>("DELETE", `/projects/${pid}`),
   project: (pid: string, branch: string) =>
     call<{ project: Project; branch: string; branches: Branch[]; head_version: number | null; state: ProjectState;

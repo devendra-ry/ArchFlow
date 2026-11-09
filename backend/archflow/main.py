@@ -333,6 +333,44 @@ def create_app(store: Store | None = None) -> FastAPI:
                for p in store.list_projects(o["id"])]
         return sorted(out, key=lambda p: p["created_at"], reverse=True)
 
+    @app.get("/api/search")
+    def search_everything(q: str = Query(..., min_length=2, max_length=100), limit: int = Query(40, ge=1, le=100),
+                          user: dict = Depends(authz.current_user)):
+        """Search the main branch of every project you can open: components, requirements, decisions and comments.
+        Plain case-insensitive substring match, best (title) matches first."""
+        needle = q.strip().lower()
+        hits: list[tuple[int, dict[str, Any]]] = []
+
+        def add(project: dict[str, Any], kind: str, item_id: str, title: str, *more: str) -> None:
+            text = " ".join(m for m in more if m)
+            if needle in title.lower():
+                rank = 0
+            elif needle in text.lower():
+                rank = 1
+            else:
+                return
+            at = text.lower().find(needle)
+            snippet = text[max(0, at - 40): at + 80].strip() if rank else text[:120]
+            hits.append((rank, {"project_id": project["id"], "project_name": project["name"], "kind": kind,
+                                "id": item_id, "title": title, "snippet": snippet}))
+
+        projects = [p for o in store.list_user_orgs(user["id"]) if not authz.policy_block(user, o["id"], o["role"])
+                    for p in store.list_projects(o["id"])][:500]
+        for p in projects:
+            add(p, "project", p["id"], p["name"], p.get("description") or "")
+            state = store.get_state(p["id"], "main")
+            if state is not None:
+                for n in state.nodes.values():
+                    add(p, "component", n.id, n.name, n.technology, n.description)
+                for r in state.requirements.values():
+                    add(p, "requirement", r.id, f"{r.id} {r.title}", r.description, " ".join(r.acceptance_criteria))
+            for d in store.list_decisions(p["id"]):
+                add(p, "decision", d["id"], f"{d['id']} {d['title']}", d.get("context") or "", d.get("decision") or "")
+            for c in store.list_comments(p["id"], "main"):
+                add(p, "comment", str(c["id"]), c["author_name"], c["body"])
+        hits.sort(key=lambda h: h[0])
+        return {"query": q, "results": [h for _, h in hits[:limit]], "total": len(hits)}
+
     @app.post("/api/projects", status_code=201)
     def create_project(body: ProjectIn, user: dict = Depends(authz.current_user)):
         a = authz.check_org(user, body.org_id, "edit")

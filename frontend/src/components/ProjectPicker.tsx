@@ -4,7 +4,7 @@ import { Brand } from "./Logo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { getRecent, pruneRecent, timeAgo } from "../recent";
-import { can, type AISettings, type Me, type Project, type User } from "../types";
+import { can, type AISettings, type Me, type Project, type SearchHit, type User } from "../types";
 import { AISettingsDialog, AIUsageDialog, JiraSettingsDialog, MembersDialog } from "./OrgDialogs";
 import { IntegrationsDialog } from "./IntegrationsDialog";
 import { SignInSettingsDialog } from "./SecurityDialogs";
@@ -37,6 +37,7 @@ function greeting(): string {
 /** Home: your projects (recent first), quick create, and the organization's AI and team settings. */
 export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onMeChanged, notice, themeToggle }: Props) {
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [inside, setInside] = useState<{ q: string; hits: SearchHit[]; total: number } | null>(null);
   const [allProjects, setAllProjects] = useState<Project[]>([]);
   const [templates, setTemplates] = useState<{ key: string; name: string }[]>([]);
   const [creating, setCreating] = useState(false);
@@ -44,6 +45,14 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
   const [template, setTemplate] = useState("blank");
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2) { setInside(null); return; }
+    const t = window.setTimeout(() => {
+      api.search(term).then((r) => setInside({ q: term, hits: r.results, total: r.total })).catch(() => setInside(null));
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [query]);
   const [sort, setSort] = useState<"recent" | "name" | "created">("recent");
   const [ai, setAi] = useState<{ available: boolean; model: string; admin?: AISettings } | null>(null);
   const searchRef = useRef<HTMLInputElement>(null);
@@ -194,6 +203,26 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
                 {recent.map(({ p, r }) => card(p, [orgs.length > 1 ? orgNames.get(p.org_id ?? "") : "", `opened ${timeAgo(r.at)}`,
                   r.branch !== "main" ? `⎇ ${r.branch}` : ""].filter(Boolean).join(" · ")))}
               </div>
+            </section>
+          )}
+
+          {q && inside && inside.q === query.trim() && inside.hits.length > 0 && (
+            <section className="home-section">
+              <h2>Inside projects <span className="count">{inside.total}</span></h2>
+              <ul className="search-hits">
+                {inside.hits.map((h) => (
+                  <li key={`${h.project_id}:${h.kind}:${h.id}`}>
+                    <button className="search-hit" onClick={() => onOpen(h.project_id)}>
+                      <span className="chip">{h.kind}</span>
+                      <span className="grow">
+                        <b>{h.title}</b> <span className="muted tiny">in {h.project_name}</span>
+                        {h.snippet && <span className="muted small search-snippet">{h.snippet}</span>}
+                      </span>
+                      <ArrowRight size={14} strokeWidth={2} aria-hidden />
+                    </button>
+                  </li>
+                ))}
+              </ul>
             </section>
           )}
 

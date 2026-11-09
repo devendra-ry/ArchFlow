@@ -159,3 +159,13 @@ def test_comment_on_a_requirement_or_a_connection(team):
     for target_type in ("requirement", "edge", "node"):
         r = owner.post(f"/api/projects/{pid}/comments", json={"body": "x", "target_type": target_type, "target_id": "nope"})
         assert r.status_code == 404, (target_type, r.text)
+
+
+def test_search_across_projects_finds_components_requirements_and_comments(app, team):
+    owner, viewer, pid = team["owner"], team["viewer"], team["pid"]
+    owner.post(f"/api/projects/{pid}/comments", json={"body": "Should the zebrafish cache be warmed?"})
+    assert owner.get("/api/search", params={"q": "z"}).status_code == 422  # too short
+    hits = viewer.get("/api/search", params={"q": "zebrafish"}).json()
+    assert [(h["kind"], h["project_id"]) for h in hits["results"]] == [("comment", pid)]
+    kinds = {h["kind"] for h in viewer.get("/api/search", params={"q": "order"}).json()["results"]}
+    assert {"component", "requirement"} <= kinds

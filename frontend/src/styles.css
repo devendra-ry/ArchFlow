@@ -1870,3 +1870,11 @@ table.tokens tbody tr:hover td, .trace-table tbody tr:hover td { background: col
 .version-author { display: flex; align-items: center; gap: 6px; }
 .version-author .avatar.sm { width: 16px; height: 16px; font-size: 9px; color: #fff; }
 .version-filter { align-items: center; margin: 0 0 6px; }
+
+/* home: search inside projects */
+.search-hits { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.search-hit { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 8px 10px;
+  border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.search-hit:hover { border-color: var(--border-strong); }
+.search-hit .grow { min-width: 0; }
+.search-snippet { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

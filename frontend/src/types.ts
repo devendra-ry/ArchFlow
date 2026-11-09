@@ -153,6 +153,11 @@ export interface VersionReview {
   version: number; status: ReviewStatus; required: number; approvals: { id: string; name: string; at: string }[];
   requested_by: { id: string; name: string } | null; history: ReviewEntry[];
 }
+/** One hit of the cross-project search (GET /search). */
+export interface SearchHit {
+  project_id: string; project_name: string; kind: "project" | "component" | "requirement" | "decision" | "comment";
+  id: string; title: string; snippet: string;
+}
 export interface ApprovalPolicy { required_approvals: number; require_for_adopt: boolean; protect_main: boolean; updated_by: string | null; updated_at: string | null }
 /** Roles that may approve a version or request changes (developers request reviews but do not approve). */
 export const APPROVER_ROLES: Role[] = ["reviewer", "architect", "admin", "owner"];
