@@ -8,8 +8,22 @@ updates:
     directory: /frontend
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
+    groups:
+      # react and react-dom must be the exact same version, or the app fails to start.
+      react:
+        patterns: ["react", "react-dom", "@types/react", "@types/react-dom"]
+      hocuspocus:
+        patterns: ["@hocuspocus/*"]
   - package-ecosystem: npm
     directory: /collab
+    schedule: { interval: weekly }
+    open-pull-requests-limit: 5
+    groups:
+      # The Hocuspocus server, provider and extensions are released together and should move together.
+      hocuspocus:
+        patterns: ["@hocuspocus/*"]
+  - package-ecosystem: npm
+    directory: /backend/openspec  # OpenSpec CLI shipped in the API image
     schedule: { interval: weekly }
     open-pull-requests-limit: 5
   - package-ecosystem: github-actions
