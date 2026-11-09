@@ -183,11 +183,14 @@ SHAPE_OF = {"client": "person", "gateway": "gateway", "security": "security", "d
             "cache": "db", "queue": "queue", "external": "external", "llm": "external"}
 _MERMAID_SHAPES = {"person": '(["{}"])', "system": '["{}"]', "container": '["{}"]', "gateway": '{{{{"{}"}}}}',
                    "security": '[/"{}"\\]', "db": '[("{}")]', "queue": '>"{}"]', "external": '["{}"]'}
+# Only an outline colour per kind: fill and text come from whatever theme renders the diagram (Mermaid's neutral or dark
+# theme in the app, GitHub's or a wiki's elsewhere), so the same source reads well in light and dark. The shapes above
+# already tell the kinds apart; the outline is a second, quieter cue. The hues match the canvas's component colours.
 _MERMAID_CLASSES = {
-    "person": "fill:#08427b,stroke:#052e56,color:#fff", "system": "fill:#1168bd,stroke:#0b4884,color:#fff",
-    "container": "fill:#438dd5,stroke:#2e6295,color:#fff", "gateway": "fill:#5a6acf,stroke:#3c4a9f,color:#fff",
-    "security": "fill:#b5452f,stroke:#7e2f20,color:#fff", "db": "fill:#2f7d6d,stroke:#1f5449,color:#fff",
-    "queue": "fill:#8a5a00,stroke:#5c3c00,color:#fff", "external": "fill:#7a7a7a,stroke:#555,color:#fff",
+    "person": "stroke:#0090ff,stroke-width:1.5px", "system": "stroke:#3e63dd,stroke-width:1.5px",
+    "container": "stroke:#30a46c,stroke-width:1.5px", "gateway": "stroke:#6e56cf,stroke-width:1.5px",
+    "security": "stroke:#dc3e42,stroke-width:1.5px", "db": "stroke:#f76b15,stroke-width:1.5px",
+    "queue": "stroke:#ffb224,stroke-width:1.5px", "external": "stroke:#8b8d98,stroke-width:1.5px,stroke-dasharray:4 3",
 }
 _ARROWS = {"solid": "-->", "dashed": "-.->", "thick": "==>"}
 

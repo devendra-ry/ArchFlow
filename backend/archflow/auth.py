@@ -215,28 +215,52 @@ class ArchFlowOAuthProvider:
 
 # --------------------------------------------------------------------------- consent and sign-in pages
 _STYLE = """<style>
-:root { --bg:#f7f7f8; --panel:#fff; --text:#1c1c21; --muted:#6b6b76; --border:#e3e3e8; --primary:#4f46e5; --warn:#b45309; }
-@media (prefers-color-scheme: dark) { :root { --bg:#111114; --panel:#18181c; --text:#ececf1; --muted:#9a9aa6; --border:#2e2e36; --primary:#6d67f0; --warn:#f5a524; } }
-* { box-sizing:border-box } body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
-main { max-width:460px; margin:48px auto; padding:0 16px; }
-.card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:22px; }
-h1 { font-size:20px; margin:0 0 4px } p { margin:6px 0 } .muted { color:var(--muted); font-size:13.5px }
-label { display:block; margin-top:14px; font-size:13px; color:var(--muted) }
-input[type=text], input[type=email], input[type=password], select { width:100%; margin-top:4px; padding:8px 10px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); font:inherit }
-.radio { display:flex; gap:8px; align-items:flex-start; margin-top:8px; color:var(--text); font-size:14px }
-.actions { display:flex; gap:10px; justify-content:flex-end; margin-top:20px }
-button { font:inherit; padding:8px 16px; border-radius:8px; border:1px solid var(--border); background:var(--panel); color:var(--text); cursor:pointer }
-button.primary { background:var(--primary); border-color:var(--primary); color:#fff }
-.err { color:var(--warn); } .brand { font-weight:700; display:flex; gap:8px; align-items:center; margin-bottom:14px }
-.logo { display:inline-grid; place-items:center; width:26px; height:26px; border-radius:7px; background:var(--primary); color:#fff; font-size:12px }
+:root { --bg:#f6f6f4; --panel:#fff; --panel-2:#f1f1ee; --text:#17171a; --muted:#6c6c66; --border:#e6e6e1; --border-strong:#d5d5ce;
+  --primary:#2f5bd8; --ink:#17171a; --ink-text:#fff; --warn:#b4600c; color-scheme:light; }
+@media (prefers-color-scheme: dark) { :root { --bg:#0d0d0f; --panel:#141417; --panel-2:#1b1b1f; --text:#ececee; --muted:#93939b;
+  --border:#26262b; --border-strong:#34343a; --primary:#7393ff; --ink:#ececee; --ink-text:#111113; --warn:#f0a33a; color-scheme:dark; } }
+* { box-sizing:border-box }
+body { margin:0; min-height:100vh; display:grid; place-items:center; padding:24px 16px; font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  letter-spacing:-.003em; background:var(--bg); color:var(--text); -webkit-font-smoothing:antialiased; }
+main { width:100%; max-width:420px; }
+.brand { display:flex; gap:9px; align-items:center; margin:0 0 20px; font-weight:650; font-size:16px; letter-spacing:-.02em }
+.logo { display:block } .logo .t { fill:var(--ink) } .logo .n { fill:var(--ink-text) } .logo .a { fill:var(--primary) }
+.logo .f { fill:none; stroke:var(--ink-text); stroke-width:1.6; stroke-linecap:round; opacity:.55 }
+.card { background:var(--panel); border:1px solid var(--border); border-radius:14px; padding:24px;
+  box-shadow:0 0 0 1px rgb(23 23 26 / 2%), 0 4px 10px rgb(23 23 26 / 5%), 0 18px 44px rgb(23 23 26 / 8%); }
+h1 { font-size:20px; letter-spacing:-.025em; font-weight:620; margin:0 0 6px } p { margin:6px 0 } .muted { color:var(--muted); font-size:13px }
+label { display:flex; flex-direction:column; gap:6px; margin-top:16px; font-size:13px; font-weight:520; color:var(--text) }
+input[type=text], input[type=email], input[type=password], select { width:100%; height:40px; padding:0 12px; border-radius:8px;
+  border:1px solid var(--border); background:var(--panel); color:var(--text); font:inherit; font-weight:400 }
+input:focus, select:focus { outline:none; border-color:var(--primary); box-shadow:0 0 0 3px color-mix(in srgb, var(--primary) 22%, transparent) }
+.radio { display:flex; flex-direction:row; gap:10px; align-items:flex-start; margin-top:10px; padding:10px 12px; border:1px solid var(--border);
+  border-radius:10px; font-size:13.5px; font-weight:400 }
+.radio:has(input:checked) { border-color:var(--primary); background:color-mix(in srgb, var(--primary) 6%, var(--panel)) }
+.radio label { margin:0; font-weight:450 }
+.actions { display:flex; gap:10px; justify-content:flex-end; margin-top:24px }
+button { font:inherit; font-weight:520; height:38px; padding:0 16px; border-radius:8px; border:1px solid var(--border); background:var(--panel);
+  color:var(--text); cursor:pointer }
+button:hover { border-color:var(--border-strong) }
+button.primary { background:var(--ink); border-color:var(--ink); color:var(--ink-text) }
+.err { color:var(--warn); font-size:13px }
 a { color:var(--primary) }
 </style>"""
+
+_LOGO = ('<svg class="logo" width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><rect class="t" width="28" height="28" rx="7"/>'
+         '<path class="f" d="M9.5 10.5v2.5a2 2 0 0 0 2 2h5a2 2 0 0 0 2-2v-2.5M14 15v2.5"/><rect class="n" x="6.5" y="6" width="6" height="4.5" rx="1.4"/>'
+         '<rect class="n" x="15.5" y="6" width="6" height="4.5" rx="1.4"/><rect class="a" x="10.5" y="17.5" width="7" height="4.5" rx="1.4"/></svg>')
 
 
 def _page(title: str, body: str) -> str:
     return (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width, initial-scale=1"><title>{html.escape(title)}</title>'
-            f'{_STYLE}</head><body><main><div class="brand"><span class="logo">▲</span> ArchFlow</div>{body}</main></body></html>')
+            f'{_STYLE}</head><body><main><div class="brand">{_LOGO} ArchFlow</div>{body}</main></body></html>')
+
+
+def message_page(title: str, text: str, error: bool = False) -> str:
+    """A small styled page for OAuth outcomes (signed in, expired request, errors). ``text`` is escaped."""
+    cls = "err" if error else "muted"
+    return _page(title, f'<div class="card"><h1>{html.escape(title)}</h1><p class="{cls}">{html.escape(text)}</p></div>')
 
 
 def consent_page(req: dict[str, Any], request_id: str, orgs: list[dict[str, Any]], user: dict[str, Any],
