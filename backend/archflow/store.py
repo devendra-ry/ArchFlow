@@ -865,9 +865,11 @@ class Store:
         with self._s() as s:
             s.execute(update(ApiToken).where(ApiToken.token_hash == token_hash).values(last_used_at=now()))
 
-    def revoke_token(self, token_hash: str) -> None:
+    def revoke_token(self, token_hash: str) -> bool:
+        """Revoke a token; True only for the call that actually revoked it (so rotation is single use)."""
         with self._s() as s:
-            s.execute(update(ApiToken).where(ApiToken.token_hash == token_hash).values(revoked=True))
+            return s.execute(update(ApiToken).where(ApiToken.token_hash == token_hash, ApiToken.revoked.is_(False))
+                             .values(revoked=True)).rowcount > 0
 
     def revoke_token_id(self, token_id: str) -> bool:
         with self._s() as s:

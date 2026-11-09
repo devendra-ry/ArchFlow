@@ -129,6 +129,7 @@ class LLDIn(BaseModel):
 
 
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{3,8}$")
+WS_MAX_MESSAGE = 8192  # bytes; cursor / selection frames relayed over /ws
 WRITE_ROLES = {r for r in ROLES if can(r, "edit")}
 
 
@@ -807,8 +808,11 @@ def create_app(store: Store | None = None) -> FastAPI:
         await hub.join(room, ws, {"name": name, "color": color})
         try:
             while True:
-                msg = json.loads(await ws.receive_text())
-                if msg.get("type") in ("cursor", "selection"):
+                raw = await ws.receive_text()
+                if len(raw) > WS_MAX_MESSAGE:  # awareness frames are tiny; don't fan out large payloads
+                    continue
+                msg = json.loads(raw)
+                if isinstance(msg, dict) and msg.get("type") in ("cursor", "selection"):
                     # Ephemeral awareness data: relay only, never persisted.
                     await hub.broadcast(room, {**msg, "client_id": id(ws), "name": name, "color": color}, exclude=ws)
         except (WebSocketDisconnect, json.JSONDecodeError):

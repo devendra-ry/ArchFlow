@@ -148,6 +148,28 @@ def test_read_only_scope_and_refresh_rotation(env):
     assert reuse.status_code == 400  # rotated refresh tokens cannot be replayed
 
 
+def test_concurrent_refresh_issues_tokens_only_once(env):
+    """Two refreshes that both load the token before either rotates it: only the first may mint new tokens."""
+    import asyncio
+
+    from mcp.server.auth.provider import TokenError
+
+    client, _ = env
+    client_id, tokens = oauth_login(client)
+    provider = client.app.state.mcp._archflow_provider
+
+    async def race():
+        reg = await provider.get_client(client_id)
+        a = await provider.load_refresh_token(reg, tokens["refresh_token"])
+        b = await provider.load_refresh_token(reg, tokens["refresh_token"])
+        assert a and b
+        await provider.exchange_refresh_token(reg, a, [])
+        with pytest.raises(TokenError):
+            await provider.exchange_refresh_token(reg, b, [])
+
+    asyncio.run(race())
+
+
 def test_personal_access_token_lifecycle(env):
     client, store = env
     pid = client.post("/api/projects", json={"name": "P", "template": "blank"}).json()["id"]
