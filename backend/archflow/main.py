@@ -877,7 +877,7 @@ def create_app(store: Store | None = None) -> FastAPI:
                                                     mfa_token=mfa.start_challenge(store, user_id, "password")))
         store.touch_login(user_id)
         resp: Response = (RedirectResponse(nxt, status_code=303) if nxt else
-                          HTMLResponse("<p>Signed in. You can close this window and return to your app.</p>"))
+                          HTMLResponse(auth.message_page("Signed in", "You can close this window and return to your app.")))
         accounts.set_session_cookie(resp, users.create_session(store, user_id, request.headers.get("user-agent", ""), method))
         return resp
 
@@ -885,7 +885,7 @@ def create_app(store: Store | None = None) -> FastAPI:
     def consent_form(request: Request, request_id: str = Query(alias="request")):
         req = provider.pending_request(request_id)
         if not req:
-            return HTMLResponse("<p>This authorization request has expired. Start the connection again from your app.</p>", 400)
+            return HTMLResponse(auth.message_page("Request expired", "This authorization request has expired. Start the connection again from your app.", error=True), 400)
         user = authz.session_user(request)
         if not user:
             return to_login(request_id)
@@ -907,7 +907,7 @@ def create_app(store: Store | None = None) -> FastAPI:
             if role is None or authz.policy_block(user, org_id, role):  # the org's SSO / MFA rules apply here too
                 pending = provider.pending_request(request_id)
                 if not pending:
-                    return HTMLResponse("<p>This authorization request has expired.</p>", 400)
+                    return HTMLResponse(auth.message_page("Request expired", "This authorization request has expired. Start the connection again from your app.", error=True), 400)
                 return HTMLResponse(auth.consent_page(pending, request_id, store.list_user_orgs(user["id"]), user,
                                                       WRITE_ROLES, "Choose one of your organizations."), 400)
             requested = [auth.SCOPE_READ, auth.SCOPE_WRITE] if form.get("access") == "write" else [auth.SCOPE_READ]
@@ -915,7 +915,7 @@ def create_app(store: Store | None = None) -> FastAPI:
         try:
             url = provider.complete_consent(request_id, approve, org_id, user, scopes)
         except ValueError as exc:
-            return HTMLResponse(f"<p>{exc}</p>", 400)
+            return HTMLResponse(auth.message_page("Could not connect", str(exc), error=True), 400)
         return RedirectResponse(url, status_code=302)
 
     # ---- personal access tokens and connected apps (org admins) ----
