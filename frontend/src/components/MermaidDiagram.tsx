@@ -28,7 +28,7 @@ export function MermaidDiagram({ source, label, onRender }: { source: string; la
     setError("");
     loadMermaid().then(async (mermaid) => {
       // "strict" escapes labels and disables click handlers, so names from the model cannot inject markup.
-      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: prefersDark() ? "dark" : "default",
+      mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: prefersDark() ? "dark" : "neutral",
         fontFamily: "Geist Variable, system-ui, sans-serif" });
       const { svg: drawn } = await mermaid.render(id, source);
       // Mermaid already sets role (and <title>/<desc> from accTitle/accDescr); add the alt text as aria-label.

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Circle, Download, Icon, Info, Pencil, Sparkles } from "../icons";
 import { api } from "../api";
 import type { OpenSpecChange, OpenSpecJob, OpenSpecOverview } from "../types";
 import { Markdown } from "./Markdown";
@@ -116,7 +117,7 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
       <aside className="os-side">
         {!readOnly && (
           <button className={`primary os-new ${view.kind === "new" ? "on" : ""}`} onClick={() => { setView({ kind: "new" }); setError(""); }}>
-            ✦ New change
+            <Icon as={Sparkles} size={14} /> New change
           </button>
         )}
         <div className="os-group">Changes</div>
@@ -135,7 +136,7 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
         )}
         <button className="small os-zip" disabled={!overview || (!overview.changes.length && !overview.specs.length)}
           onClick={() => act("zip", () => api.openspecZip(pid))} title="The whole openspec/ folder: config, living specs, changes and archive">
-          ⤓ openspec/ .zip
+          <Icon as={Download} size={14} /> openspec/ .zip
         </button>
         {overview && !overview.available && <p className="warn tiny">OpenSpec is not installed on the server: changes are saved but not validated.</p>}
       </aside>
@@ -158,7 +159,7 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
               <input className="grow" value={extra} onChange={(e) => setExtra(e.target.value)} disabled={running}
                 placeholder="Instructions for this change (optional): conventions, libraries, what to leave out…" />
               <button className="primary" disabled={running || readOnly} onClick={start}>
-                {running ? "Writing…" : overview?.ai ? "✦ Write with AI" : "Create change"}
+                {running ? "Writing…" : overview?.ai ? <><Icon as={Sparkles} size={14} /> Write with AI</> : "Create change"}
               </button>
             </div>
             {job && (
@@ -170,7 +171,7 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
                   const fixing = s === "Validating with OpenSpec" ? job.steps.filter((x) => x.step.startsWith("Fixing")).length : 0;
                   return (
                     <li key={s} className={current ? "current" : done ? "done" : ""}>
-                      <span className="os-step-mark">{current ? <span className="pulse">●</span> : done ? "✓" : "○"}</span> {s}
+                      <span className="os-step-mark">{current ? <span className="pulse"><Icon as={Circle} size={12} /></span> : done ? <Icon as={Check} size={12} /> : <Icon as={Circle} size={12} />}</span> {s}
                       {fixing > 0 && <span className="muted small"> · fixed issues ×{fixing}</span>}
                     </li>
                   );
@@ -199,7 +200,7 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
               </span>
             </div>
             {detail.change.validation.skipped && <p className="warn small">{detail.change.validation.skipped}</p>}
-            {(detail.change.validation.notes ?? []).map((n, i) => <p key={i} className="muted small">ⓘ {n}</p>)}
+            {(detail.change.validation.notes ?? []).map((n, i) => <p key={i} className="muted small"><Icon as={Info} size={12} /> {n}</p>)}
             {!!detail.change.validation.issues?.length && (
               <ul className="os-issues">
                 {detail.change.validation.issues.map((i, k) => (
@@ -241,7 +242,7 @@ export function OpenSpecPanel({ pid, branch, nodeIds, requirementIds, targets, r
                   ) : <button className="small ghost" onClick={() => setConfirm("delete")}>Delete</button>}
                   <span className="spacer" />
                   {tab !== PROMPT && (editing === null
-                    ? <button onClick={() => setEditing(detail.files[tab] ?? "")}>✎ Edit</button>
+                    ? <button onClick={() => setEditing(detail.files[tab] ?? "")}><Icon as={Pencil} size={14} /> Edit</button>
                     : <>
                         <button onClick={() => setEditing(null)}>Cancel</button>
                         <button className="primary" disabled={!!busy} onClick={() => act("save", async () => {

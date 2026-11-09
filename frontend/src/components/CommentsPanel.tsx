@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Box, Check, Icon, Scale, Target } from "../icons";
 import { api } from "../api";
 import type { Comment, CommentTarget, Member, ProjectState } from "../types";
 
@@ -173,7 +174,7 @@ export function CommentsPanel({ pid, branch, comments, members, meId, state, sel
           <span className="grow" />
           {isRoot && canComment && (mine || canResolveAny) && (
             <button className="small ghost" onClick={() => run(api.updateComment(pid, c.id, { resolved: !c.resolved }))}
-              title={c.resolved ? "Reopen this thread" : "Mark as resolved and hide it"}>{c.resolved ? "Reopen" : "✓ Resolve"}</button>
+              title={c.resolved ? "Reopen this thread" : "Mark as resolved and hide it"}>{c.resolved ? "Reopen" : <><Icon as={Check} size={12} /> Resolve</>}</button>
           )}
           {mine && canComment && <button className="small ghost" onClick={() => setEditing({ id: c.id, text: c.body, mentions: c.mentions })}>Edit</button>}
           {(mine || isAdmin) && canComment && (
@@ -221,7 +222,7 @@ export function CommentsPanel({ pid, branch, comments, members, meId, state, sel
           <li key={root.id} data-thread={root.id} className={`thread ${focusThread === root.id ? "focused" : ""} ${root.resolved ? "resolved" : ""}`}>
             <button className="thread-target small" disabled={root.target_type !== "node" || !state?.nodes[root.target_id]}
               onClick={() => onShowNode(root.target_id)} title={root.target_type === "node" ? "Show on the canvas" : undefined}>
-              {root.target_type === "node" ? "▣" : root.target_type === "decision" ? "⚖" : "◎"} {targetLabel(root)}
+              {root.target_type === "node" ? <Icon as={Box} size={12} /> : root.target_type === "decision" ? <Icon as={Scale} size={12} /> : <Icon as={Target} size={12} />} {targetLabel(root)}
             </button>
             {commentView(root, true)}
             {replies.map((r) => <div key={r.id} className="reply">{commentView(r, false)}</div>)}

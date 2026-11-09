@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Check, Circle, Icon, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import { Select, plainOptions } from "./Select";
@@ -54,7 +55,7 @@ export function ImportProgress({ file, steps, seconds, onCancel, stages = STAGES
           const message = step?.message ?? (s.key === "upload" && file.size > 0 ? `Sending ${size(file.size)} to the server…` : "");
           return (
             <li key={s.key} className={state}>
-              <span className="intake-step-icon" aria-hidden>{state === "done" ? "✓" : state === "now" ? <span className="spinner" /> : "○"}</span>
+              <span className="intake-step-icon" aria-hidden>{state === "done" ? <Icon as={Check} size={12} /> : state === "now" ? <span className="spinner" /> : <Icon as={Circle} size={12} />}</span>
               <div>
                 <div className="small">{s.label}</div>
                 {message && <div className="small muted">{message}</div>}
@@ -143,7 +144,7 @@ export function ImportRequirementsDialog({ pid, branch, onDone, onClose }: Props
       <div className="modal wide intake" role="dialog" aria-label="Import requirements from a document" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Import requirements from a document</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         {!result && (
           <div className="intake-pick">

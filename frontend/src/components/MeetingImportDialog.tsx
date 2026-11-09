@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Icon, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import type { MeetingAction, MeetingDecision, MeetingNote, MeetingProposal, MeetingResult, MeetingStep, MemoryCategory } from "../types";
@@ -114,7 +115,7 @@ export function MeetingImportDialog({ pid, branch, canAddKnowledge, onDone, onCl
       <div className="modal wide intake" role="dialog" aria-label="Import a meeting" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Import a meeting</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         {!result && (
           <div className="intake-pick">

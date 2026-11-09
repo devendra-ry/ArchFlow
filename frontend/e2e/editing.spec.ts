@@ -45,7 +45,7 @@ test("the workspace bar leads back to the projects and to main", async ({ page }
   await page.getByLabel("New branch name").fill("experiment/nav");
   await page.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("combobox", { name: "Branch", exact: true })).toHaveAttribute("data-value", "experiment/nav");
-  await page.getByRole("button", { name: "↩ main" }).click();
+  await page.getByRole("button", { name: "main", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Branch", exact: true })).toHaveAttribute("data-value", "main");
   await page.getByRole("button", { name: "Back to all projects" }).click();
   await expect(page.getByRole("button", { name: "+ New project" }).first()).toBeVisible();

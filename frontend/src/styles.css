@@ -314,7 +314,7 @@ h4 { margin: 16px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppe
 
 /* ---------- modals ---------- */
 .modal-backdrop { position: fixed; inset: 0; background: rgb(0 0 0 / 40%); display: grid; place-items: center; z-index: 50; padding: 16px; }
-.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; width: min(560px, 100%); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; }
+.modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 16px; width: min(560px, 100%); box-shadow: var(--shadow); display: flex; flex-direction: column; gap: 10px; position: relative; }
 .modal.wide { width: min(900px, 100%); max-height: 90vh; }
 .modal h3 { margin: 0; }
 .prompt-out { flex: 1; overflow: auto; background: var(--panel-2); border-radius: 8px; padding: 12px; font-size: 12px; white-space: pre-wrap; margin: 0; min-height: 200px; }
@@ -389,7 +389,6 @@ h4 { margin: 16px 0 6px; font-size: 11px; font-weight: 600; text-transform: uppe
 .dc-banner code { font-size: 11.5px; }
 
 /* ---------- connect dialog ---------- */
-.modal .tabs.inline { position: static; background: none; }
 .connect-body { display: flex; flex-direction: column; gap: 6px; }
 .snippet { display: flex; gap: 6px; align-items: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; }
 .snippet pre { flex: 1; margin: 0; font-size: 12px; white-space: pre-wrap; word-break: break-all; }
@@ -607,12 +606,15 @@ button.ghost.on { color: var(--primary); }
 
 /* ---------- project memory ---------- */
 .modal.memory { max-width: 720px; }
-.mem-add { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-.mem-add input:not([type="checkbox"]) { flex: 1; min-width: 220px; }
+.mem-add { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg);
+  background: var(--panel-2); }
+.mem-add input:not([type="checkbox"]) { flex: 1 1 100%; min-width: 0; height: 36px; }
+.mem-add > label { flex: none; white-space: nowrap; }
+.mem-add > button.primary { margin-left: auto; }
 .mem-filter { width: 100%; }
 .mem-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; }
 .mem-list li { display: flex; align-items: flex-start; gap: 8px; padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; }
-.mem-list li.pinned { border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); background: color-mix(in srgb, var(--primary) 5%, var(--panel)); }
+.mem-list li.pinned { border-color: var(--border-strong); background: var(--panel-2); }
 .mem-body { flex: 1; min-width: 0; overflow-wrap: anywhere; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
 .mem-cat { flex: none; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 2px 6px; border-radius: 999px;
   background: var(--panel-2); color: var(--muted); margin-top: 1px; min-width: 74px; text-align: center; }
@@ -1028,7 +1030,6 @@ button.ai-pill { cursor: pointer; }
 
 /* ---- compare architectures dialog ---- */
 .modal.compare { width: min(1040px, 100%); max-height: 92vh; overflow-y: auto; }
-.modal.compare h4 { margin: 0 0 6px; font-size: 13px; }
 .compare-pick { display: flex; flex-direction: column; gap: 8px; }
 .row.wrap { flex-wrap: wrap; }
 .row.end { justify-content: flex-end; }
@@ -1057,7 +1058,6 @@ button.ai-pill { cursor: pointer; }
 
 /* ---- merge branches dialog ---- */
 .modal.merge { width: min(980px, 100%); max-height: 92vh; overflow-y: auto; }
-.modal.merge h4 { margin: 4px 0 6px; font-size: 13px; }
 .modal.merge section { display: flex; flex-direction: column; gap: 6px; }
 .merge-pick label { display: flex; align-items: center; gap: 6px; }
 .merge-changes, .merge-conflicts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
@@ -1285,7 +1285,6 @@ button.danger.ghost { color: var(--danger); }
 .meeting-summary { background: color-mix(in srgb, var(--primary) 8%, var(--panel)); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; margin: 0; }
 .meeting-owner { width: 110px; }
 .intake-badge.ok-badge { background: color-mix(in srgb, var(--ok, #16a34a) 18%, var(--panel)); color: var(--ok, #16a34a); }
-.modal.intake h4 { margin: 8px 0 2px; font-size: 13px; }
 
 /* ---- knowledge base ---- */
 .kb-answer { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
@@ -1297,7 +1296,6 @@ button.danger.ghost { color: var(--danger); }
 
 /* ---- cost estimate ---- */
 .modal.costs { width: min(1040px, 100%); max-height: 92vh; overflow-y: auto; }
-.modal.costs h4 { margin: 6px 0 2px; font-size: 13px; }
 .cost-totals { display: flex; flex-wrap: wrap; gap: 10px; }
 .cost-totals > div { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; min-width: 130px; }
 .cost-totals b { font-size: 18px; }
@@ -1370,6 +1368,20 @@ input:hover:not(:disabled):not(:focus), textarea:hover:not(:disabled):not(:focus
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--primary); box-shadow: var(--ring); }
 input[type="checkbox"], input[type="radio"] { accent-color: var(--primary); width: 15px; height: 15px; }
 ::placeholder { color: color-mix(in srgb, var(--muted) 85%, transparent); }
+/* disclosure: one chevron for every <details>, rotating when open */
+details > summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 6px; width: fit-content; font-weight: 520;
+  border-radius: var(--radius-sm); }
+details > summary::-webkit-details-marker { display: none; }
+details > summary::before { content: ""; width: 6px; height: 6px; flex: none; border-right: 1.6px solid currentColor; border-bottom: 1.6px solid currentColor;
+  transform: rotate(-45deg); margin: 0 3px 0 1px; opacity: .6; transition: transform .15s var(--ease); }
+details[open] > summary::before { transform: rotate(45deg); margin-top: -3px; }
+details > summary:hover { color: var(--text); }
+/* file pickers: the browser's control, styled like the app's buttons */
+input[type="file"] { font-size: 12.5px; color: var(--muted); border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 6px;
+  background: var(--panel-2); cursor: pointer; max-width: 100%; }
+input[type="file"]::file-selector-button { font: 520 12.5px var(--font-sans); color: var(--text); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 6px; padding: 5px 12px; margin-right: 10px; cursor: pointer; box-shadow: 0 1px 1px rgb(23 23 26 / 4%); }
+input[type="file"]:hover::file-selector-button { background: var(--hover-strong); }
 /* Native selects that remain (or come from elsewhere) get the same look as the custom one. */
 select {
   appearance: none; -webkit-appearance: none; padding-right: 30px; cursor: pointer;
@@ -1479,13 +1491,44 @@ button:focus-visible { outline-offset: 1px; }
 .switcher-item:hover, .switcher-item.active { background: var(--hover-strong); }
 
 /* ---------- dialogs ---------- */
-.modal-backdrop { background: rgb(8 8 14 / 45%); backdrop-filter: blur(2px); animation: af-fade .15s ease-out; }
-.modal { border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); padding: 18px; max-height: calc(100dvh - 32px); overflow-y: auto;
-  animation: af-modal-in .18s var(--ease); }
+/* Every dialog shares one shell: a sticky header (title, actions, close), a padded body, an optional sticky footer
+   (the last .row.end). Section headings, form fields, inline tabs and tables follow one pattern inside it. */
+.modal-backdrop { background: rgb(12 12 16 / 42%); backdrop-filter: blur(3px); animation: af-fade .15s ease-out; }
+.modal { --mp-x: 24px; --mp-y: 20px; border-radius: var(--radius-xl); box-shadow: var(--shadow-lg); padding: var(--mp-y) var(--mp-x);
+  max-height: calc(100dvh - 32px); overflow-y: auto; gap: 14px; animation: af-modal-in .18s var(--ease); scrollbar-gutter: stable; }
 @keyframes af-modal-in { from { opacity: 0; transform: translateY(6px) scale(.99); } }
-.modal > .row.between:first-child { position: sticky; top: -18px; z-index: 3; margin: -18px -18px 0; padding: 14px 18px 10px;
-  background: var(--panel); border-bottom: 1px solid var(--border); }
-.modal > .row.between:first-child h3 { font-size: 16px; }
+.modal > .row.between:first-child { position: sticky; top: calc(-1 * var(--mp-y)); z-index: 3; margin: calc(-1 * var(--mp-y)) calc(-1 * var(--mp-x)) 0;
+  min-height: 58px; padding: 12px 14px 12px var(--mp-x); background: color-mix(in srgb, var(--panel) 92%, transparent);
+  backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); flex-wrap: nowrap; }
+.modal > .row.between:first-child h3 { font-size: 15.5px; font-weight: 620; letter-spacing: -.015em; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.modal > .row.between:first-child > .row { flex-wrap: nowrap; }
+.modal button[aria-label="Close"], .modal button[aria-label="close"] { width: 32px; height: 32px; padding: 0; flex: none; color: var(--muted); }
+.modal button[aria-label="Close"]:hover:not(:disabled) { color: var(--text); }
+/* footer: the trailing action row stays in reach on long dialogs */
+.modal > .row.end:last-child:not(:first-child) { position: sticky; bottom: calc(-1 * var(--mp-y)); z-index: 3;
+  margin: 4px calc(-1 * var(--mp-x)) calc(-1 * var(--mp-y)); padding: 12px var(--mp-x); background: var(--panel); border-top: 1px solid var(--border); }
+.modal h4 { margin: 14px 0 4px; font-size: 13px; font-weight: 600; text-transform: none; letter-spacing: -.005em; color: var(--text); }
+.modal > p, .modal section > p { line-height: 1.55; }
+.modal .field { gap: 6px; font-size: 13px; }
+.modal .field > span { color: var(--text); font-weight: 520; font-size: 12.5px; }
+.modal .field input:not([type="checkbox"]):not([type="radio"]), .modal .field textarea { width: 100%; }
+/* plain forms in dialogs stack their fields with breathing room; the submit row aligns right */
+.modal form:not([class]) { display: flex; flex-direction: column; gap: 14px; }
+.modal form:not([class]) > .row:last-child { justify-content: flex-end; }
+.modal .field > span .tiny, .modal .field > span .muted { font-weight: 400; }
+/* inline tabs inside dialogs read as a segmented control */
+.modal .tabs.inline { display: inline-flex; align-self: flex-start; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--panel-2); max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.modal .tabs.inline button { flex: none; padding: 4px 12px; font-size: 12.5px; border: none; border-radius: 6px; color: var(--muted); box-shadow: none; }
+.modal .tabs.inline button.on { background: var(--panel); color: var(--text); font-weight: 560; border-bottom: none;
+  box-shadow: 0 1px 2px rgb(23 23 26 / 10%), 0 0 0 1px var(--border); }
+/* data tables: quiet headers, hairline rows, aligned figures */
+table.tokens, .trace-table, .adr-matrix, .modal table { border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.tokens th, .trace-table th, .adr-matrix th, .modal table th { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--faint); text-align: left; padding: 8px; border-bottom: 1px solid var(--border-strong); white-space: nowrap; }
+table.tokens td, .trace-table td, .modal table td { padding: 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.tokens tbody tr:hover td, .trace-table tbody tr:hover td { background: color-mix(in srgb, var(--text) 3%, transparent); }
 @media (prefers-reduced-motion: reduce) { .modal, .modal-backdrop { animation: none; } }
 
 /* ---------- workspace chrome ---------- */
@@ -1697,7 +1740,7 @@ button:focus-visible { outline-offset: 1px; }
   .tools-pop > button { min-height: 48px; }
   .modal-backdrop { padding: 0; place-items: stretch; }
   .modal, .modal.wide, .modal.memory, .modal.vibe, .modal.compare, .modal.merge, .modal.diagrams, .modal.costs {
-    width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; border: none; padding: 16px;
+    width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; border-radius: 0; border: none; --mp-x: 16px; --mp-y: 16px;
     animation: af-sheet-in .2s var(--ease);
   }
   .modal > .row.between:first-child { top: -16px; margin: -16px -16px 0; padding: calc(10px + env(safe-area-inset-top)) 12px 10px 16px; }
@@ -1745,7 +1788,6 @@ button:focus-visible { outline-offset: 1px; }
 
 /* ---- compliance ---- */
 .modal.compliance { width: min(980px, 100%); max-height: 92vh; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
-.modal.compliance h4 { margin: 6px 0 0; font-size: 13px; }
 .cmp-frameworks { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .cmp-fw-pick { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
 .cmp-fw-pick.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, var(--panel)); }

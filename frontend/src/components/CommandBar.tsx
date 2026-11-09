@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { ChevronDown, ChevronRight, ChevronUp, Icon, Pencil, RefreshCw, Sparkles, X } from "../icons";
 import { ArrowUp, Brain, History, Maximize2, Minimize2, PanelLeft, PanelRight, PictureInPicture2, Plus, type LucideIcon } from "lucide-react";
 import type { Assistant } from "../assistant";
 import type { AiSuggestion, ConversationMessage } from "../types";
@@ -135,7 +136,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
             const options = m.data.question_options?.[q] ?? [];
             return (
               <div key={i} className="ask-bubble">
-                <div className="ask-q small"><span className="ask-avatar" aria-hidden>✦</span>{q}</div>
+                <div className="ask-q small"><span className="ask-avatar" aria-hidden><Icon as={Sparkles} size={12} /></span>{q}</div>
                 <div className="ask-options">
                   {options.map((o) => (
                     <button key={o} type="button" className="reply-chip" disabled={a.busy || !isLast}
@@ -153,7 +154,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
       <div className="cmd-meta">
         {m.mode === "command" && m.data.engine && <span className="muted tiny">{m.data.engine === "offline" ? "offline parser" : "AI edit"}</span>}
         {m.content && <button className="ghost tiny-btn" onClick={() => copy(m)} title="Copy answer">{copied === m.seq ? "Copied" : "Copy"}</button>}
-        {isLast && canRegenerate && <button className="ghost tiny-btn" onClick={a.regenerate} title="Answer again">↻ {m.data.error ? "Retry" : "Regenerate"}</button>}
+        {isLast && canRegenerate && <button className="ghost tiny-btn" onClick={a.regenerate} title="Answer again"><Icon as={RefreshCw} size={12} /> {m.data.error ? "Retry" : "Regenerate"}</button>}
       </div>
       {isLast && !a.busy && !m.data.error && suggestionsSource === "ai" && (suggestions.length > 0 || suggestionsLoading) && (
         <div className="cmd-followups" aria-label={suggestions.some((s) => s.kind === "reply") ? "Quick replies" : "Suggested follow-ups"}>
@@ -199,7 +200,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
       )}
       {!docked && hasLog && !full && mode !== "design" && (
         <button type="button" className="ghost tiny-btn" onClick={() => setExpanded(!expanded)} aria-label="Toggle conversation"
-          title={expanded ? "Collapse" : "Expand"}>{expanded ? "▾" : "▴"}</button>
+          title={expanded ? "Collapse" : "Expand"}>{expanded ? <Icon as={ChevronDown} size={14} /> : <Icon as={ChevronUp} size={14} />}</button>
       )}
     </div>
   );
@@ -209,7 +210,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
       <div className={`command-bar design-mode ${docked ? `docked ${dock}` : "tall"}`}>
         {top}
         <div className="cmd-design">{designSlot}</div>
-        {aiBusy && <div className="ai-busy small">✦ {aiBusy}</div>}
+        {aiBusy && <div className="ai-busy small"><Icon as={Sparkles} size={12} /> {aiBusy}</div>}
       </div>
     );
   }
@@ -234,7 +235,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
                 </button>
                 {owns(t.created_by_id) && (
                   <button className="ghost tiny-btn" title="Delete conversation" aria-label={`Delete ${t.title}`}
-                    onClick={() => { if (window.confirm(`Delete “${t.title || "this conversation"}” for everyone?`)) a.remove(t.id); }}>✕</button>
+                    onClick={() => { if (window.confirm(`Delete “${t.title || "this conversation"}” for everyone?`)) a.remove(t.id); }}><Icon as={X} size={12} /></button>
                 )}
               </li>
             ))}
@@ -252,7 +253,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
           ) : (
             <span className="cmd-title" title={conv ? `Started by ${conv.created_by}` : undefined}>
               {conv?.title || "New conversation"}
-              {conv && owns(conv.created_by_id) && <button className="ghost tiny-btn" onClick={() => setEditingTitle(conv.title)} title="Rename">✎</button>}
+              {conv && owns(conv.created_by_id) && <button className="ghost tiny-btn" onClick={() => setEditingTitle(conv.title)} title="Rename" aria-label="Rename"><Icon as={Pencil} size={12} /></button>}
             </span>
           )}
           <span className="spacer" />
@@ -261,7 +262,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
               onClick={() => { if (window.confirm("Clear this conversation for everyone?")) a.clear(); }}>Clear</button>
           )}
           <button className="ghost tiny-btn" onClick={() => { a.open(null); inputRef.current?.focus(); }} disabled={a.busy}>{ic(Plus, 12)} New chat</button>
-          {!full && !docked && <button className="ghost tiny-btn" onClick={() => setTall(!tall)} title={tall ? "Smaller" : "Taller"}>{tall ? "⤓" : "⤒"}</button>}
+          {!full && !docked && <button className="ghost tiny-btn" onClick={() => setTall(!tall)} title={tall ? "Smaller" : "Taller"}>{tall ? <Icon as={ChevronDown} size={14} /> : <Icon as={ChevronUp} size={14} />}</button>}
         </div>
       )}
       {(expanded || docked) && showLog && (
@@ -291,7 +292,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
           {conv?.summary && (
             <div className="cmd-summary small">
               <button className="link" onClick={() => setShowSummary(!showSummary)}>
-                {showSummary ? "▾" : "▸"} Earlier messages are summarized for the AI
+                {showSummary ? <Icon as={ChevronDown} size={12} /> : <Icon as={ChevronRight} size={12} />} Earlier messages are summarized for the AI
               </button>
               {showSummary && <Markdown text={conv.summary} className="muted" />}
             </div>
@@ -310,7 +311,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
           {a.error && (
             <div className="error small row between">
               <span>{a.error}</span>
-              <button className="ghost tiny-btn" onClick={a.dismissError} aria-label="Dismiss">✕</button>
+              <button className="ghost tiny-btn" onClick={a.dismissError} aria-label="Dismiss"><Icon as={X} size={12} /></button>
             </div>
           )}
         </div>
@@ -335,7 +336,7 @@ export function CommandBar({ assistant: a, selection, aiBusy, links, memoryCount
         <button type="button" className="ghost mem-btn" onClick={onOpenMemory}
           title="Project memory: facts every AI answer, edit and design takes into account">{ic(Brain, 16)} {memoryCount}</button>
       </form>
-      {aiBusy && <div className="ai-busy small">✦ {aiBusy}</div>}
+      {aiBusy && <div className="ai-busy small"><Icon as={Sparkles} size={12} /> {aiBusy}</div>}
     </div>
   );
 }

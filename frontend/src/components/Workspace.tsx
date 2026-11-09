@@ -6,9 +6,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { LucideIcon } from "lucide-react";
 import {
-  ArrowLeft, ArrowLeftRight, BookOpen, ChevronDown, CircleDollarSign, Download, FileCode2, FileText, GitPullRequest, Hammer,
-  HeartPulse, History, Icon, KeyRound, ListChecks, Maximize2, MessageSquare, Plug, Plus, Scale, Search, ShieldCheck, Sparkles,
-  SquareTerminal, Upload, Workflow,
+  ArrowLeft, ArrowLeftRight, BookOpen, ChevronDown, CircleDollarSign, Download, FileCode2, FileText, GitBranch, GitPullRequest, Hammer, HeartPulse, History, Icon, KeyRound, ListChecks, Maximize2, MessageSquare, Plug, Plus, Scale, Search, ShieldCheck, Sparkles, SquareTerminal, Undo2, Upload, Workflow, X,
 } from "../icons";
 import { api } from "../api";
 import { useCollab } from "../collab";
@@ -803,7 +801,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
   );
 
   const problems = analysis ? analysis.health.issues.errors + analysis.health.issues.warnings : 0;
-  const healthText = problems === 0 ? "✓ No issues" : `${problems} issue${problems === 1 ? "" : "s"}`;
+  const healthText = problems === 0 ? "No issues" : `${problems} issue${problems === 1 ? "" : "s"}`;
   const aiAdmin = can(role ?? undefined, "admin") && !!project?.org_id;
   const aiTip = ai?.available ? `AI model: ${ai.model}` : aiAdmin
     ? "No AI model configured for this organization: click to add a provider key and choose models."
@@ -851,9 +849,9 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
         <div className="branch">
           <Select value={branch} onChange={onBranch} aria-label="Branch" className="branch-select" menuWidth={240}
             options={(branches.some((b) => b.name === branch) ? branches : [...branches, { name: branch, base_version: null, created_at: "" }])
-              .map((b) => ({ value: b.name, label: b.name, icon: "⎇", hint: b.name === "main" ? "Main line" : b.base_version != null ? `From v${b.base_version}` : undefined }))} />
+              .map((b) => ({ value: b.name, label: b.name, icon: <Icon as={GitBranch} size={14} />, hint: b.name === "main" ? "Main line" : b.base_version != null ? `From v${b.base_version}` : undefined }))} />
           {branch !== "main" && branches.some((b) => b.name === "main") && (
-            <button className="small ghost" onClick={() => onBranch("main")} title="Switch back to the main branch">↩ main</button>
+            <button className="small ghost" onClick={() => onBranch("main")} title="Switch back to the main branch"><Icon as={Undo2} size={12} /> main</button>
           )}
           {readOnly ? null : newBranch === null ? (
             <button className="small ghost icon-btn" onClick={() => setNewBranch("experiment/")} title="New branch" aria-label="New branch"><Icon as={Plus} size={14} /></button>
@@ -861,7 +859,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
             <form className="row gap" onSubmit={(e) => { e.preventDefault(); createBranch(newBranch.trim(), null); setNewBranch(null); }}>
               <input autoFocus value={newBranch} onChange={(e) => setNewBranch(e.target.value)} aria-label="New branch name" />
               <button className="small primary" disabled={!/^(?=.{1,60}$)[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/.test(newBranch.trim())}>Create</button>
-              <button type="button" className="small" onClick={() => setNewBranch(null)}>✕</button>
+              <button type="button" className="small" onClick={() => setNewBranch(null)} aria-label="Cancel"><Icon as={X} size={12} /></button>
             </form>
           )}
         </div>
@@ -1001,7 +999,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       <aside className={`sidebar ${drawer === "left" ? "open" : ""}`}>
         <div className="drawer-head">
           <b>Panels</b>
-          <button className="ghost icon-btn" onClick={() => setDrawer(null)} aria-label="Close panels" title="Close">✕</button>
+          <button className="ghost icon-btn" onClick={() => setDrawer(null)} aria-label="Close panels" title="Close"><Icon as={X} size={16} /></button>
         </div>
         {/* A vertical rail of panels (labels as tooltips, so none is ever cut off) next to the open panel. */}
         <nav className="tabs side-tabs" role="tablist" aria-label="Project panels" aria-orientation="vertical">
@@ -1122,7 +1120,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
           </div>
         )}
         {canvasFull && (
-          <button className="canvas-exit-full" onClick={toggleCanvasFull} title="Exit full screen (Esc or F)">✕ Exit full screen</button>
+          <button className="canvas-exit-full" onClick={toggleCanvasFull} title="Exit full screen (Esc or F)"><Icon as={X} size={14} /> Exit full screen</button>
         )}
         {diff && <div className="diff-banner">Diff: v{diff.from} → working · {diff.data.total_changes} change(s) <button className="small" onClick={() => setDiff(null)}>Exit</button></div>}
         {traced && <div className="diff-banner">Tracing {traced} <button className="small" onClick={() => setTraced(null)}>Clear</button></div>}
@@ -1162,7 +1160,7 @@ function WorkspaceInner({ pid, branch, user, me, colorMode, themeToggle, onBranc
       <aside className={`rightbar ${dock === "right" ? "with-chat" : ""} ${drawer === "right" ? "open" : ""}`}>
         <div className="drawer-head">
           <b>{dock === "right" && rightTab === "chat" ? "Assistant" : "Properties"}</b>
-          <button className="ghost icon-btn" onClick={() => setDrawer(null)} aria-label="Close properties" title="Close">✕</button>
+          <button className="ghost icon-btn" onClick={() => setDrawer(null)} aria-label="Close properties" title="Close"><Icon as={X} size={16} /></button>
         </div>
         {dock === "right" && (
           <nav className="tabs">

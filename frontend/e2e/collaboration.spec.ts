@@ -108,7 +108,7 @@ test("comments with @mentions, notifications, replies and resolving between two 
   await expect(olivia.locator(".thread .mention")).toHaveText(`@${SAM}`);
 
   // Dana sees it live: a badge on the component, and a notification
-  await expect(node(dana, "Orders API").locator(".an-comments")).toHaveText("💬 1");
+  await expect(node(dana, "Orders API").locator(".an-comments")).toHaveText("1");
   const bell = dana.getByRole("button", { name: /^Notifications/ });
   await dana.reload(); // the bell polls; a reload checks it straight away
   await expect(bell).toHaveAccessibleName("Notifications, 1 unread");
@@ -125,7 +125,7 @@ test("comments with @mentions, notifications, replies and resolving between two 
   await expect(olivia.getByRole("button", { name: "Notifications, 1 unread" })).toBeVisible();
 
   // Olivia resolves the thread: it leaves the open list and the badge for both
-  await olivia.locator(".thread").getByRole("button", { name: "✓ Resolve" }).click();
+  await olivia.locator(".thread").getByRole("button", { name: "Resolve", exact: true }).click();
   await expect(olivia.locator(".thread")).toHaveCount(0);
   await expect(node(dana, "Orders API").locator(".an-comments")).toHaveCount(0);
   await dana.getByRole("tab", { name: /Resolved · 1/ }).click();

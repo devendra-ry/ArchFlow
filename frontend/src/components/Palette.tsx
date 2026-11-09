@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { ChevronLeft, Icon, Plus, X } from "../icons";
 import type { Catalog, CatalogItem } from "../types";
 import { TYPE_META, TypeIcon } from "./ArchNode";
 
@@ -63,7 +64,7 @@ export function Palette({ catalog, startOpen = true, open, onOpenChange, onAdd, 
     if (sheet) return null; // the canvas action bar opens it
     return (
       <button className="palette-toggle" onClick={() => setCollapsed(false)} title="Show components">
-        <span aria-hidden className="palette-toggle-plus">＋</span> Components
+        <span aria-hidden className="palette-toggle-plus"><Icon as={Plus} size={12} /></span> Components
       </button>
     );
   }
@@ -75,7 +76,7 @@ export function Palette({ catalog, startOpen = true, open, onOpenChange, onAdd, 
         <span className="palette-count">{total}</span>
         <span className="grow" />
         <button className="ghost small icon-btn" onClick={() => setCollapsed(true)} aria-label="Hide components" title="Hide">
-          {sheet ? "✕" : "⟨"}
+          {sheet ? <Icon as={X} size={16} /> : <Icon as={ChevronLeft} size={16} />}
         </button>
       </div>
       <div className="palette-head">

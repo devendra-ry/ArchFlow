@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Icon, Pencil, Star, Trash2, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import { Select, plainOptions } from "./Select";
@@ -51,7 +52,7 @@ export function MemoryDialog({ pid, branch, items, readOnly, onChanged, onClose 
       <div className="modal wide memory" role="dialog" aria-label="Project memory" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Project memory</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         <p className="muted small">
           Facts the team has settled. Every AI answer, canvas edit and design-chat question takes them into account.
@@ -100,14 +101,14 @@ export function MemoryDialog({ pid, branch, items, readOnly, onChanged, onClose 
                   {!readOnly && (
                     <span className="mem-actions">
                       <button className={`ghost tiny-btn ${m.pinned ? "on" : ""}`} disabled={busy} title={m.pinned ? "Unpin" : "Pin: always include"}
-                        onClick={() => run(() => api.updateMemory(pid, branch, m.id, { pinned: !m.pinned }))}>{m.pinned ? "★" : "☆"}</button>
+                        onClick={() => run(() => api.updateMemory(pid, branch, m.id, { pinned: !m.pinned }))}><Icon as={Star} size={14} fill={m.pinned ? "currentColor" : "none"} /></button>
                       <button className="ghost tiny-btn" disabled={busy} title="Edit"
-                        onClick={() => setEditing({ id: m.id, text: m.text, category: m.category })}>✎</button>
+                        onClick={() => setEditing({ id: m.id, text: m.text, category: m.category })}><Icon as={Pencil} size={14} /></button>
                       <button className="ghost tiny-btn" disabled={busy} title="Forget this fact" aria-label={`Forget ${m.text}`}
-                        onClick={() => run(() => api.deleteMemory(pid, branch, m.id))}>✕</button>
+                        onClick={() => run(() => api.deleteMemory(pid, branch, m.id))}><Icon as={Trash2} size={14} /></button>
                     </span>
                   )}
-                  {readOnly && m.pinned && <span className="muted" title="Pinned">★</span>}
+                  {readOnly && m.pinned && <span className="muted" title="Pinned"><Icon as={Star} size={12} fill="currentColor" /></span>}
                 </>
               )}
             </li>

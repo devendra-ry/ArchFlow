@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { GitBranch, Icon, Sparkles, TriangleAlert, X } from "../icons";
 import { api, ApiError } from "../api";
 import { Select } from "./Select";
 import type { Branch, MergeChoice, MergeConflict, MergePreview, MergeResult, MergeSuggestion } from "../types";
@@ -118,14 +119,14 @@ export function MergeDialog({ pid, branches, source: initialSource, target: init
     if (b.how === "branch-point") return `from v${b.version}, where ${source} was created`;
     return "with no shared history: everything that differs is compared directly";
   }, [preview, source]);
-  const branchOptions = branches.map((b) => ({ value: b.name, label: b.name, icon: "⎇" }));
+  const branchOptions = branches.map((b) => ({ value: b.name, label: b.name, icon: <Icon as={GitBranch} size={14} /> }));
 
   return (
     <div className="modal-backdrop" onClick={() => !applying && onClose()}>
       <div className="modal wide merge" role="dialog" aria-label="Merge branches" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Merge branches</h3>
-          <button className="ghost" onClick={onClose} disabled={applying} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} disabled={applying} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         <div className="row gap wrap merge-pick">
           <label className="small">Merge
@@ -138,7 +139,7 @@ export function MergeDialog({ pid, branches, source: initialSource, target: init
         </div>
 
         {loading && <p className="muted small">Comparing branches…</p>}
-        {error && <p className="error small" role="alert">⚠ {error}</p>}
+        {error && <p className="error small" role="alert"><Icon as={TriangleAlert} size={14} /> {error}</p>}
 
         {preview && changes && (
           <>
@@ -168,7 +169,7 @@ export function MergeDialog({ pid, branches, source: initialSource, target: init
                   <div className="row gap">
                     <button className="small" onClick={() => pickAll("ours")}>All {target}</button>
                     <button className="small" onClick={() => pickAll("theirs")}>All {source}</button>
-                    <button className="small" onClick={suggest} disabled={suggesting}>{suggesting ? "Thinking…" : "✦ Suggest with AI"}</button>
+                    <button className="small" onClick={suggest} disabled={suggesting}>{suggesting ? "Thinking…" : <><Icon as={Sparkles} size={14} /> Suggest with AI</>}</button>
                   </div>
                 </div>
                 {aiNote && <p className="muted small">{aiNote}</p>}
@@ -204,7 +205,7 @@ export function MergeDialog({ pid, branches, source: initialSource, target: init
                         )}
                         {s && (
                           <div className="merge-ai small">
-                            <span>✦ AI suggests <b>{s.choice === "ours" ? target : s.choice === "theirs" ? source : `“${show(s.value)}”`}</b>: {s.rationale}</span>
+                            <span><Icon as={Sparkles} size={12} /> AI suggests <b>{s.choice === "ours" ? target : s.choice === "theirs" ? source : `“${show(s.value)}”`}</b>: {s.rationale}</span>
                             <button className="small" onClick={() => useSuggestion(c, s)}>Use</button>
                           </div>
                         )}

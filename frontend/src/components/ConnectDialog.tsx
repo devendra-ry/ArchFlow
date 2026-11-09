@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Icon, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import { Select } from "./Select";
@@ -68,7 +69,7 @@ export function ConnectDialog({ orgId, orgName, canManage, onClose }: Props) {
       <div className="modal wide" role="dialog" aria-label="Connect AI agents" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Connect AI agents over MCP</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         <p className="muted small">
           Agents get the same tools as this canvas: read and edit the architecture, requirements and versions, and pull

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Check, Icon } from "../icons";
 import { api } from "../api";
 import type {
   ArchitecturesCard, ArchOption, ArchReview, ChatTurn, Conversation, ConversationMessage, ProjectState, QuestionCard, User,
@@ -364,7 +365,7 @@ function QuestionView({ card, active, answered, onAnswer, onSkip }: {
             <button key={o.id} type="button" disabled={!active}
               className={`q-option ${on ? "on" : ""}`} role={card.multi ? "checkbox" : "radio"} aria-checked={on}
               onClick={() => toggle(o.id)}>
-              <span className={`q-mark ${card.multi ? "box" : "dot"}`} aria-hidden>{on ? "✓" : ""}</span>
+              <span className={`q-mark ${card.multi ? "box" : "dot"}`} aria-hidden>{on ? <Icon as={Check} size={12} /> : ""}</span>
               <span className="q-text">
                 <span className="q-label">{o.label}{o.recommended && <span className="badge">Recommended</span>}</span>
                 {o.description && <span className="q-desc">{o.description}</span>}
@@ -408,11 +409,11 @@ function ReviewNote({ review }: { review: ArchReview }) {
   const label = fixed > 0
     ? `Reviewed: fixed ${fixed} issue${fixed === 1 ? "" : "s"}`
     : review.fixes.length ? `Reviewed: ${review.fixes.length} improvement${review.fixes.length === 1 ? "" : "s"}` : "Reviewed: no issues found";
-  if (!review.fixes.length && !open.length) return <div className="arch-review tiny ok">✓ {label}</div>;
+  if (!review.fixes.length && !open.length) return <div className="arch-review tiny ok"><Icon as={Check} size={12} /> {label}</div>;
   return (
     <details className="arch-review tiny">
       <summary>
-        <span className={open.some((i) => i.severity === "error") ? "warn" : "ok"}>✓ {label}</span>
+        <span className={open.some((i) => i.severity === "error") ? "warn" : "ok"}><Icon as={Check} size={12} /> {label}</span>
         {open.length > 0 && <span className="muted"> · {open.length} open</span>}
         <span className="muted"> · by {by}</span>
       </summary>

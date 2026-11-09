@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { ChevronDown, ChevronRight, CircleCheck, GitBranch, Icon, Scale, Star, TriangleAlert, X } from "../icons";
 import { api } from "../api";
 import { can, type Branch, type Decision, type DecisionAlternative, type DecisionStatus, type Evaluation, type Role, type User } from "../types";
 import { useEscape } from "../useEscape";
@@ -69,7 +70,7 @@ export function ScoreMatrix({ ev, totals, top }: { ev: Evaluation; totals?: Reco
             <th>Criterion</th>
             {alts.map((a) => (
               <th key={a} className={a === best ? "rec" : ""} title={a}>
-                {a === best && <span aria-label="ranks first">★ </span>}{a}
+                {a === best && <span aria-label="ranks first" className="rank-star"><Icon as={Star} size={12} /> </span>}{a}
               </th>
             ))}
           </tr>
@@ -83,7 +84,7 @@ export function ScoreMatrix({ ev, totals, top }: { ev: Evaluation; totals?: Reco
               <Fragment key={c}>
                 <tr className={reasons.length ? "has-why" : ""} onClick={() => reasons.length && setOpen(open === c ? null : c)}
                   title={reasons.length ? "Show why" : undefined}>
-                  <td>{reasons.length > 0 && <span className="why-caret">{open === c ? "▾" : "▸"} </span>}{label(ev, c)}</td>
+                  <td>{reasons.length > 0 && <span className="why-caret">{open === c ? <Icon as={ChevronDown} size={12} /> : <Icon as={ChevronRight} size={12} />} </span>}{label(ev, c)}</td>
                   {alts.map((a) => {
                     const v = ev.scores[a]?.[c];
                     return <td key={a} className={v !== undefined && v === max && vals.length > 1 ? "best" : ""}
@@ -219,7 +220,7 @@ function CompareDialog({ pid, branches, user, onClose, onRecorded, toast }: Comp
       <div className="modal wide compare" role="dialog" aria-label="Compare architectures" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Compare architectures</h3>
-          <button className="ghost" onClick={onClose} aria-label="Close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
 
         <div className="compare-pick">
@@ -228,7 +229,7 @@ function CompareDialog({ pid, branches, user, onClose, onRecorded, toast }: Comp
             {branches.map((b) => (
               <button key={b.name} className={`chip toggle ${picked.includes(b.name) ? "on" : ""}`} onClick={() => toggle(b.name)}
                 disabled={!picked.includes(b.name) && picked.length >= 4} aria-pressed={picked.includes(b.name)}>
-                ⎇ {b.name}
+                <Icon as={GitBranch} size={12} /> {b.name}
               </button>
             ))}
           </div>
@@ -246,7 +247,7 @@ function CompareDialog({ pid, branches, user, onClose, onRecorded, toast }: Comp
           <>
             <div className="compare-rec">
               <div className="row between wrap">
-                <b>★ {changedPriorities ? `With your priorities: ${ranked.top}` : `Recommended: ${result.recommended}`}</b>
+                <b><Icon as={Star} size={12} /> {changedPriorities ? `With your priorities: ${ranked.top}` : `Recommended: ${result.recommended}`}</b>
                 {result.confidence != null && <span className="small muted">AI confidence {Math.round(result.confidence * 100)}%</span>}
               </div>
               {changedPriorities && <p className="small warn">The AI recommended <b>{result.recommended}</b> with the requirement-based weights; your priorities put <b>{ranked.top}</b> first.</p>}
@@ -257,8 +258,8 @@ function CompareDialog({ pid, branches, user, onClose, onRecorded, toast }: Comp
               {result.second_opinion && (
                 <p className={`small opinion ${result.second_opinion.agrees ? "agree" : "disagree"}`}>
                   {result.second_opinion.agrees
-                    ? <>✓ Jev and the AI review agree on <b>{result.recommended}</b>.</>
-                    : <>⚠ Jev picks <b>{result.recommended}</b>; the AI review would pick <b>{result.second_opinion.recommended}</b>. Ask below why they differ.</>}
+                    ? <><Icon as={CircleCheck} size={14} /> Jev and the AI review agree on <b>{result.recommended}</b>.</>
+                    : <><Icon as={TriangleAlert} size={14} /> Jev picks <b>{result.recommended}</b>; the AI review would pick <b>{result.second_opinion.recommended}</b>. Ask below why they differ.</>}
                 </p>
               )}
               {result.flip_conditions && <p className="small"><span className="muted">What would change this: </span>{result.flip_conditions}</p>}
@@ -367,7 +368,7 @@ export function DecisionsPanel({ pid, branches, user, role, onAdopted, toast }: 
       <div className="panel-tools">
         <span className="grow muted small">Architecture decision records</span>
         {canEdit && <button className="primary" onClick={() => setComparing(true)} title="Score 2–4 drafts with AI and record the choice">
-          ⚖ Compare drafts
+          <Icon as={Scale} size={14} /> Compare drafts
         </button>}
       </div>
 
@@ -488,7 +489,7 @@ function DecisionDetail({ pid, decision: d, branches, user, role, toast, onBack,
                   <b>{a.name}</b>
                   {a === alt && <span className="chip on">chosen</span>}
                 </div>
-                {a.branch && a.branch !== a.name && <div className="small muted mono">⎇ {a.branch}</div>}
+                {a.branch && a.branch !== a.name && <div className="small muted mono"><Icon as={GitBranch} size={12} /> {a.branch}</div>}
                 {a.summary && <div className="small">{a.summary}</div>}
                 {(a.pros.length > 0 || a.cons.length > 0) && (
                   <div className="pc small">

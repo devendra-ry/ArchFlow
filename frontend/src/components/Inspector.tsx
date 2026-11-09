@@ -1,4 +1,5 @@
 import { MousePointerClick } from "lucide-react";
+import { ArrowLeftRight, CornerDownRight, Icon, SquareTerminal } from "../icons";
 import { activeRequirements, NODE_TYPES, type Catalog, type Op, type ProjectState, type StaleLink, type JiraLink } from "../types";
 import { JiraBadge } from "./RequirementsPanel";
 import { VENDOR_STYLE } from "./Palette";
@@ -96,7 +97,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
                 {n.vendor && VENDOR_STYLE[n.vendor] && <span className="vbadge" style={{ ["--vc" as string]: VENDOR_STYLE[n.vendor].color, marginLeft: 6 }}>{VENDOR_STYLE[n.vendor].short}</span>}
               </span>
               {alts.length > 0 && (
-                <Select value="" aria-label="Swap for an equivalent service" placeholder="⇄ Swap for an equivalent…" menuWidth={260}
+                <Select value="" aria-label="Swap for an equivalent service" placeholder="Swap for an equivalent…" menuWidth={260}
                   options={alts.map((a) => ({ value: a.id, label: a.name, hint: catalog!.vendors[a.vendor] }))} onChange={(id) => {
                   const alt = catalog!.items.find((c) => c.id === id);
                   if (!alt) return;
@@ -155,10 +156,10 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
         <div className="insp-actions">
           {onOpenInternals && n.type !== "note" && (
             <button onClick={() => onOpenInternals(n.id)} title="Open this component's internal (low-level) diagram">
-              Open internals ↘{(() => { const k = Object.values(state.nodes).filter((x) => x.parent_id === n.id).length; return k ? ` (${k})` : ""; })()}
+              Open internals <Icon as={CornerDownRight} size={14} />{(() => { const k = Object.values(state.nodes).filter((x) => x.parent_id === n.id).length; return k ? ` (${k})` : ""; })()}
             </button>
           )}
-          <button onClick={onPrompt}>⚙ Build this (coding prompt)</button>
+          <button onClick={onPrompt}><Icon as={SquareTerminal} size={14} /> Build this (coding prompt)</button>
           {!readOnly && <button className="danger" onClick={() => send([{ op: "remove_node", id: n.id }])}>Delete</button>}
         </div>
         {pid && branch && !n.parent_id && n.type !== "note" && <LldViews pid={pid} branch={branch} nodeId={n.id} rev={state.rev} />}
@@ -182,7 +183,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
         </fieldset>
         {!readOnly && (
           <div className="insp-actions">
-            <button onClick={() => send([{ op: "update_edge", id: e.id, changes: { source: e.target, target: e.source } }])}>⇄ Reverse</button>
+            <button onClick={() => send([{ op: "update_edge", id: e.id, changes: { source: e.target, target: e.source } }])}><Icon as={ArrowLeftRight} size={14} /> Reverse</button>
             <button className="danger" onClick={() => send([{ op: "remove_edge", id: e.id }])}>Delete</button>
           </div>
         )}
@@ -196,7 +197,7 @@ export function Inspector({ catalog, state, nodeIds, edgeIds, send, onPrompt, pi
         <div className="insp-head">{nodeIds.length} components, {edgeIds.length} connections</div>
         <p className="muted small">Ctrl+C / Ctrl+V to copy, Ctrl+D to duplicate, Delete to remove.</p>
         <div className="insp-actions">
-          <button onClick={onPrompt}>⚙ Build selected architecture</button>
+          <button onClick={onPrompt}><Icon as={SquareTerminal} size={14} /> Build selected architecture</button>
           {!readOnly && <button className="danger" onClick={() => send([
             ...edgeIds.filter((id) => !nodeIds.includes(state.edges[id]?.source) && !nodeIds.includes(state.edges[id]?.target))
               .map((id) => ({ op: "remove_edge", id })),

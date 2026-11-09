@@ -1,4 +1,5 @@
 import { ArrowRight, Search } from "lucide-react";
+import { Icon, X } from "../icons";
 import { Brand } from "./Logo";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
@@ -257,7 +258,7 @@ export function ProjectPicker({ me, user, colors, onColor, onOpen, onLogout, onM
                   }}>
                     <input autoFocus className="grow" placeholder="Organization name" value={newOrg} onChange={(e) => setNewOrg(e.target.value)} />
                     <button className="small primary" disabled={!newOrg.trim()}>Create</button>
-                    <button type="button" className="small" onClick={() => setNewOrg(null)}>✕</button>
+                    <button type="button" className="small" onClick={() => setNewOrg(null)} aria-label="Cancel"><Icon as={X} size={12} /></button>
                   </form>
                 )}
               </div>

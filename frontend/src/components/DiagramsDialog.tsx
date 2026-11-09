@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Download, Icon, X } from "../icons";
 import { api } from "../api";
 import { useEscape } from "../useEscape";
 import type { Diagram, DiagramInfo } from "../types";
@@ -56,7 +57,7 @@ export function DiagramsDialog({ pid, branch, projectName, aiAvailable, rev, onC
       <div className="modal wide diagrams" role="dialog" aria-label="Diagrams" onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>Diagrams</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         <p className="muted small">
           Drawn from this branch's model, so they always match the canvas. Copy the Mermaid or PlantUML source into docs,
@@ -88,7 +89,7 @@ export function DiagramsDialog({ pid, branch, projectName, aiAvailable, rev, onC
                   <div className="row gap">
                     <Copy text={shown.mermaid} label="Copy Mermaid" />
                     <Copy text={shown.plantuml} label="Copy PlantUML" />
-                    <button className="small" disabled={!svg} onClick={() => saveSvg(svg, fileName)}>⤓ SVG</button>
+                    <button className="small" disabled={!svg} onClick={() => saveSvg(svg, fileName)}><Icon as={Download} size={14} /> SVG</button>
                   </div>
                 </div>
                 <p className="small diagrams-alt"><span className="muted">Alt text: </span>{shown.alt}</p>

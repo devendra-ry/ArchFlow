@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
+import { ArrowUp, Icon, X } from "../icons";
 import { ApiError, api } from "../api";
 import { useEscape } from "../useEscape";
 import { ROLES, ROLE_HELP, can, type AIConfig, type ApprovalPolicy, type AIGroup, type AISettings, type AITestResult, type AIUsageReport, type AIUsageRow, type Invite, type Member, type Role, type JiraSettings, type JiraTestResult } from "../types";
@@ -9,16 +11,19 @@ interface Base { orgId: string; orgName: string; role: Role; selfId: string; onC
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {
   const escRef = useEscape(onClose);
-  return (
+  // Portalled to <body>: a dialog opened from a menu inside a bar with backdrop-filter (the home header) would otherwise
+  // be positioned inside that bar, because backdrop-filter makes it the containing block for position: fixed.
+  return createPortal(
     <div className="modal-backdrop" onClick={onClose} ref={escRef}>
       <div className="modal wide" role="dialog" aria-label={title} onClick={(e) => e.stopPropagation()}>
         <div className="row between">
           <h3>{title}</h3>
-          <button className="ghost" onClick={onClose} aria-label="close">✕</button>
+          <button className="ghost" onClick={onClose} aria-label="Close"><Icon as={X} size={16} /></button>
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -273,9 +278,9 @@ export function AISettingsDialog({ orgId, orgName, onClose }: Base) {
                         <input className="grow mono" value={entry.model} aria-label="Model id" placeholder={p?.examples[group] ?? "model id"}
                           onChange={(e) => setChain(group, config[group].map((x, k) => (k === i ? { ...x, model: e.target.value } : x)))} />
                         <button type="button" className="ghost tiny-btn" disabled={i === 0} aria-label="Move up"
-                          onClick={() => { const c = [...config[group]]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; setChain(group, c); }}>↑</button>
+                          onClick={() => { const c = [...config[group]]; [c[i - 1], c[i]] = [c[i], c[i - 1]]; setChain(group, c); }}><Icon as={ArrowUp} size={12} /></button>
                         <button type="button" className="ghost tiny-btn" aria-label="Remove"
-                          onClick={() => setChain(group, config[group].filter((_, k) => k !== i))}>✕</button>
+                          onClick={() => setChain(group, config[group].filter((_, k) => k !== i))}><Icon as={X} size={12} /></button>
                       </div>
                     );
                   })}

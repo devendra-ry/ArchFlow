@@ -1,4 +1,5 @@
 import { Handle, NodeToolbar, Position, type NodeProps, type Node } from "@xyflow/react";
+import { CornerDownRight, Icon, MessageSquare, RotateCw, Trash2, TriangleAlert } from "../icons";
 import { memo } from "react";
 import {
   Bot, Box, BrainCircuit, Component, Database, Globe, HardDrive, ListOrdered, MonitorSmartphone, Network, Plug, Radio, Route, Shield,
@@ -87,10 +88,10 @@ function ArchNodeView({ data, selected, dragging }: NodeProps<ArchFlowNode>) {
         <NodeToolbar isVisible={dragging ? false : undefined} position={Position.Top} offset={8} className="node-toolbar">
           {onOpenInternals && (
             <button onClick={onOpenInternals} title="Open the internal design (double-click)">
-              <span aria-hidden>↘</span> {childCount ? `Internals (${childCount})` : "Design internals"}</button>
+              <Icon as={CornerDownRight} size={14} /> {childCount ? `Internals (${childCount})` : "Design internals"}</button>
           )}
-          {onComments && <button onClick={onComments} title="Read the comments on this component"><span aria-hidden>💬</span> Comments</button>}
-          {onRemove && <button className="danger" onClick={onRemove} title="Delete (Del)" aria-label={`Delete ${model.name}`}><span aria-hidden>✕</span></button>}
+          {onComments && <button onClick={onComments} title="Read the comments on this component"><Icon as={MessageSquare} size={14} /> Comments</button>}
+          {onRemove && <button className="danger" onClick={onRemove} title="Delete (Del)" aria-label={`Delete ${model.name}`}><Icon as={Trash2} size={14} /></button>}
         </NodeToolbar>
       )}
       <Handle type="target" position={Position.Top} />
@@ -122,16 +123,16 @@ function ArchNodeView({ data, selected, dragging }: NodeProps<ArchFlowNode>) {
           {model.vendor && VENDOR_STYLE[model.vendor] && (
             <span className="vbadge" style={{ ["--vc" as string]: VENDOR_STYLE[model.vendor].color }}>{VENDOR_STYLE[model.vendor].short}</span>
           )}
-          {!!issues && <span className="an-issues" title={`${issues} issue(s)`}>⚠ {issues}</span>}
+          {!!issues && <span className="an-issues" title={`${issues} issue(s)`}><Icon as={TriangleAlert} size={12} /> {issues}</span>}
           {!!stale?.length && (
             <span className="an-stale" title={`Requirement${stale.length > 1 ? "s" : ""} changed since this component: ${stale.join(", ")}. Review it in Properties.`}>
-              ⟳ {stale.length}</span>
+              <Icon as={RotateCw} size={12} /> {stale.length}</span>
           )}
           {!!comments && (
             <button className="an-comments nodrag" title={`${comments} open comment thread(s) · click to read`} aria-label={`${comments} open comments`}
-              onClick={(e) => { e.stopPropagation(); onComments?.(); }} onDoubleClick={(e) => e.stopPropagation()}>💬 {comments}</button>
+              onClick={(e) => { e.stopPropagation(); onComments?.(); }} onDoubleClick={(e) => e.stopPropagation()}><Icon as={MessageSquare} size={12} /> {comments}</button>
           )}
-          {!!childCount && <span className="an-children" title={`${childCount} internal element(s) · double-click to open`}>↘ {childCount}</span>}
+          {!!childCount && <span className="an-children" title={`${childCount} internal element(s) · double-click to open`}><Icon as={CornerDownRight} size={12} /> {childCount}</span>}
         </div>
       )}
       {model.type === "table" && (() => {
