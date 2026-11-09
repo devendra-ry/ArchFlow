@@ -11,14 +11,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@hocuspocus/extension-database": "^4.7.0",
-    "@hocuspocus/server": "^4.7.0",
+    "@hocuspocus/extension-database": "^4.8.0",
+    "@hocuspocus/server": "^4.8.0",
     "tsx": "^4.23.15",
     "yjs": "^13.6.33"
   },
   "devDependencies": {
-    "@hocuspocus/provider": "^4.7.0",
-    "@types/node": "^26.6.3",
-    "typescript": "^5.9.3"
+    "@hocuspocus/provider": "^4.8.0",
+    "@types/node": "^26.6.6",
+    "typescript": "^7.0.2"
   }
 }

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Box, Check, Icon, Scale, Target } from "../icons";
 import { api } from "../api";
 import type { Comment, CommentTarget, Member, ProjectState } from "../types";
@@ -50,6 +50,7 @@ export function MentionInput({ members, meId, value, onChange, onSubmit, placeho
 }) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const picked = useRef(new Map<string, string>());
+  const caretAfterUpdate = useRef<number | null>(null);
   const [query, setQuery] = useState<{ text: string; start: number } | null>(null);
   const [active, setActive] = useState(0);
   const matches = useMemo(() => {
@@ -72,9 +73,17 @@ export function MentionInput({ members, meId, value, onChange, onSubmit, placeho
     picked.current.set(m.user_id, m.name);
     setQuery(null);
     onChange(text, keptMentions(text, picked.current));
-    const pos = query.start + m.name.length + 2;
-    window.requestAnimationFrame(() => { el.focus(); el.setSelectionRange(pos, pos); });
+    // Place the caret after the mention in the same commit that writes the new text (layout effect below). With
+    // requestAnimationFrame, a key typed before the next frame landed at the end of the box.
+    caretAfterUpdate.current = query.start + m.name.length + 2;
+    el.focus();
   };
+  useLayoutEffect(() => {
+    const pos = caretAfterUpdate.current;
+    if (pos === null || !ref.current) return;
+    caretAfterUpdate.current = null;
+    ref.current.setSelectionRange(pos, pos);
+  }, [value]);
 
   return (
     <form className="mention-form" onSubmit={(e) => { e.preventDefault(); if (value.trim()) onSubmit(); }}>
