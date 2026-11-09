@@ -4,7 +4,8 @@ import { api } from "../api";
 import type { AppNotification } from "../types";
 import { onMenuKeyDown } from "./Select";
 
-const POLL_MS = 20_000;
+// Changes arrive live over /ws/notifications; the poll is only a fallback (e.g. while the socket reconnects).
+const POLL_MS = 120_000;
 const VERB: Record<AppNotification["kind"], string> = {
   mention: "mentioned you", reply: "replied", review_requested: "asked you to review", approved: "approved",
   changes_requested: "requested changes to",
@@ -24,6 +25,24 @@ export function NotificationBell({ refreshKey, onOpen }: { refreshKey: number; o
   useEffect(() => {
     const t = window.setInterval(load, POLL_MS);
     return () => window.clearInterval(t);
+  }, [load]);
+  useEffect(() => {
+    let ws: WebSocket | null = null;
+    let retry = 0;
+    let timer = 0;
+    let closed = false;
+    const connect = () => {
+      const proto = location.protocol === "https:" ? "wss" : "ws";
+      ws = new WebSocket(`${proto}://${location.host}/ws/notifications`);
+      ws.onopen = () => { retry = 0; load(); };
+      ws.onmessage = (e) => { try { if (JSON.parse(e.data).type === "notifications") load(); } catch { /* ignore */ } };
+      ws.onclose = () => {
+        if (closed) return;
+        timer = window.setTimeout(connect, Math.min(30_000, 1000 * 2 ** retry++));
+      };
+    };
+    connect();
+    return () => { closed = true; window.clearTimeout(timer); ws?.close(); };
   }, [load]);
   useEffect(() => {
     if (!open) return;

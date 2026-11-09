@@ -126,3 +126,22 @@ def test_outsiders_see_nothing(app, team):
     team["owner"].post(f"/api/projects/{pid}/comments", json={"body": "secret"})
     assert outsider.get(f"/api/projects/{pid}/comments").status_code == 404
     assert outsider.post(f"/api/projects/{pid}/comments", json={"body": "hi"}).status_code == 404
+
+
+def test_notifications_arrive_live_over_the_socket(app, team):
+    """The bell used to learn about mentions only by polling every 20 s; now the API pushes a message to the
+    mentioned user's open tabs the moment the notification is stored."""
+    from starlette.websockets import WebSocketDisconnect
+
+    from authhelp import new_client, ws_headers
+
+    owner, dev, pid, ids = team["owner"], team["dev"], team["pid"], team["ids"]
+    with dev:  # runs the app's lifespan, which wires the store's notify hook to the live channel
+        with dev.websocket_connect("/ws/notifications", headers=ws_headers(dev)) as ws:
+            owner.post(f"/api/projects/{pid}/comments", json={"body": "@Dev look", "target_type": "project",
+                                                              "mentions": [ids["Dev"]]})
+            assert ws.receive_json() == {"type": "notifications"}
+    with pytest.raises(WebSocketDisconnect) as refused:  # signed-out sockets are refused
+        with new_client(app).websocket_connect("/ws/notifications", headers={"Origin": "http://localhost:5173"}) as ws:
+            ws.receive_json()
+    assert refused.value.code == 4401

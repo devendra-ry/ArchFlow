@@ -179,6 +179,9 @@ class Store:
         # within a process; the row lock covers other processes.
         self.lock = threading.RLock()
         self._local = threading.local()  # .session = the active transaction() session on this thread
+        # Called with the user ids that just received notifications (after the rows are committed); the API pushes
+        # a live "notifications changed" message to those users' open tabs (main.py).
+        self.on_notify: Any = None
         migrate.upgrade(self.engine)
         with self._s() as s:
             if s.get(Org, DEFAULT_ORG_ID) is None:
@@ -1138,6 +1141,7 @@ class Store:
                 s.add(Notification(user_id=uid, project_id=comment["project_id"], branch=comment["branch"],
                                    comment_id=comment["id"], thread_id=thread, kind=kind, actor_name=actor_name,
                                    preview=preview, created_at=now()))
+        self._notified(user_ids)
 
     def add_review_notifications(self, user_ids: list[str], *, pid: str, branch: str, version: int, kind: str,
                                  actor_name: str, preview: str = "") -> None:
@@ -1147,6 +1151,14 @@ class Store:
                 s.add(Notification(user_id=uid, project_id=pid, branch=branch, comment_id=None, thread_id="",
                                    version=version, kind=kind, actor_name=actor_name, preview=preview[:200],
                                    created_at=now()))
+        self._notified(user_ids)
+
+    def _notified(self, user_ids: list[str]) -> None:
+        if user_ids and self.on_notify:
+            try:
+                self.on_notify(list(dict.fromkeys(user_ids)))
+            except Exception:  # noqa: BLE001 - a live push is best effort; the bell also polls
+                pass
 
     @staticmethod
     def _visible_notifications(user_id: str):

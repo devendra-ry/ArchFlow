@@ -151,6 +151,17 @@ class Hub:
         await self.bus.present(room, id(ws), user)
         await self.broadcast_presence(room)
 
+    async def subscribe(self, room: str, ws: WebSocket) -> None:
+        """Join a room for server messages only (no presence), e.g. a user's notification channel."""
+        self.rooms.setdefault(room, {})[ws] = {}
+
+    def unsubscribe(self, room: str, ws: WebSocket) -> None:
+        self.rooms.get(room, {}).pop(ws, None)
+
+    @staticmethod
+    def user_room(user_id: str) -> str:
+        return f"user:{user_id}"
+
     async def leave(self, room: str, ws: WebSocket) -> None:
         self.rooms.get(room, {}).pop(ws, None)
         await self.bus.absent(room, id(ws))
@@ -194,6 +205,14 @@ def create_app(store: Store | None = None) -> FastAPI:
     async def lifespan(app: FastAPI):
         # The remote MCP endpoint's session manager must run for the lifetime of the app.
         hub.bus.start(hub.deliver)  # cross-instance fan-out (only with ARCHFLOW_REDIS_URL)
+        loop = asyncio.get_running_loop()
+
+        def push_notifications(user_ids: list[str]) -> None:
+            # Called from route handlers (event loop) and from worker threads (sync routes): schedule on the loop.
+            for uid in user_ids:
+                asyncio.run_coroutine_threadsafe(hub.broadcast(Hub.user_room(uid), {"type": "notifications"}), loop)
+
+        store.on_notify = push_notifications
         try:
             async with app.state.mcp.session_manager.run():
                 yield
@@ -819,6 +838,28 @@ def create_app(store: Store | None = None) -> FastAPI:
             pass
         finally:
             await hub.leave(room, ws)
+
+    @app.websocket("/ws/notifications")
+    async def ws_notifications(ws: WebSocket):
+        """Live "your notifications changed" messages for the signed-in user (the bell reloads on each)."""
+        origin = ws.headers.get("origin")
+        if origin and users.origin_of(origin) not in origins:
+            await ws.close(code=4403)
+            return
+        user = authz.user_from_token(ws.cookies.get(users.SESSION_COOKIE))
+        if not user:
+            await ws.close(code=4401)
+            return
+        await ws.accept()
+        room = Hub.user_room(user["id"])
+        await hub.subscribe(room, ws)
+        try:
+            while True:
+                await ws.receive_text()  # nothing to receive; keeps the socket open until the client goes
+        except WebSocketDisconnect:
+            pass
+        finally:
+            hub.unsubscribe(room, ws)
 
     # ---- remote MCP server (Streamable HTTP + OAuth 2.1) ----
     mcp = build_remote_mcp(Services(store=store, commit_ops=commit_ops, commit_version=commit_version,
