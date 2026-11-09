@@ -17,7 +17,9 @@ Flow (authorization code with PKCE):
    (60 s leeway) and the ``nonce``. The email must be verified (``email_verified`` not false) and in an allowed
    domain.
 4. Just-in-time provisioning: an unknown email gets an account (no password: it signs in through SSO only) and
-   joins the org with the default role; a known account that is not a member joins the same way. Then, if the user
+   joins the org with the default role; a known account that is not a member joins the same way, but first loses its
+   password and every existing session and API token (sign-up does not verify email addresses, so a password
+   account for that address may have been created by someone else beforehand). Then, if the user
    has MFA on, the web app asks for the code; otherwise the session starts. The session remembers that it signed in
    through this org's SSO, which "require SSO" checks (authz.py; owners are exempt as a break-glass path).
 
@@ -297,7 +299,18 @@ def provision(store, org_id: str, settings: dict[str, Any], claims: dict[str, An
         raise SSOError("Your email address is not verified at the identity provider.")
     if email_domain(email) not in (settings["domains"] or []):
         raise SSOError(f"{email} is not in an email domain this organization allows for single sign-on.")
-    user = store.get_user_by_email(email)
+    user = store.get_user_by_email(email, with_hash=True)
+    if user and store.get_role(org_id, user["id"]) is None and user.get("password_hash") != NO_PASSWORD:
+        # First time this org's identity provider vouches for an existing password account. Sign-up does not
+        # verify email addresses, so the account may have been registered in advance by someone else who knows
+        # its password (account pre-hijacking). The IdP has now proven who owns the address: drop the password and
+        # end every existing session and token before the account joins the org.
+        log.info("SSO for %s linked an existing password account %s: password, sessions and tokens reset",
+                 org_id, user["id"])
+        store.set_password_hash(user["id"], NO_PASSWORD)
+        store.revoke_user_sessions(user["id"])
+        store.revoke_all_user_tokens(user["id"])
+    user = {k: v for k, v in user.items() if k != "password_hash"} if user else None
     if not user:
         name = str(claims.get("name") or claims.get("preferred_username") or email.split("@")[0]).strip()[:80]
         try:
