@@ -262,7 +262,9 @@ def test_a_version_saved_over_mcp_cannot_be_approved_by_its_author():
         _, tokens = oauth_login(arch)
         err, out, text = tool(arch, tokens["access_token"], "commit_version", project_id=pid, message="From my agent")
         assert not err, text
-        n = arch.get(f"/api/projects/{pid}/versions").json()[0]["number"]
+        latest = arch.get(f"/api/projects/{pid}/versions").json()[0]
+        assert latest["author_id"] == arch.get("/api/me").json()["user"]["id"]  # the UI filters by it
+        n = latest["number"]
         act(arch, pid, n, "request-review")
         r = act(arch, pid, n, "approve")
         assert r.status_code == 403 and "someone else" in r.json()["detail"]

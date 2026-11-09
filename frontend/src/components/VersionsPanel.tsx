@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronRight, GitBranch, Icon } from "../icons";
 import { api } from "../api";
+import { Select } from "./Select";
 import { APPROVER_ROLES, can, type Activity, type Branch, type Diff, type ReviewStatus, type Role, type Version, type VersionReview } from "../types";
 
 interface Props {
@@ -29,6 +30,14 @@ const ACTION_LABEL = { request: "requested review", approve: "approved", request
 
 const BRANCH_RE = /^(?=.{1,60}$)[A-Za-z0-9._-]+(?:\/[A-Za-z0-9._-]+)*$/;
 
+/** A stable colour per author, so the same person reads the same everywhere in the list. */
+function authorColor(key: string) {
+  let h = 0;
+  for (const ch of key) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return `hsl(${h % 360} 55% 45%)`;
+}
+const authorKey = (v: Version) => v.author_id || `name:${v.author}`;
+
 function ago(iso: string) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
   if (s < 60) return "just now";
@@ -45,6 +54,9 @@ export function VersionsPanel({ pid, role, versions, activity, branch, headVersi
   const [confirmRestore, setConfirmRestore] = useState<number | null>(null);
   const [showActivity, setShowActivity] = useState(false);
   const [showBranches, setShowBranches] = useState(false);
+  const [author, setAuthor] = useState("");
+  const authors = [...new Map(versions.map((v) => [authorKey(v), v.author])).entries()];
+  const shown = author ? versions.filter((v) => authorKey(v) === author) : versions;
 
   return (
     <div className="panel">
@@ -68,8 +80,15 @@ export function VersionsPanel({ pid, role, versions, activity, branch, headVersi
       )}
 
       {versions.length === 0 && <div className="empty-state"><p className="small">No versions yet. Applying a design option or adopting a decision saves one automatically; you can also save one above.</p></div>}
+      {authors.length > 1 && (
+        <div className="row gap version-filter">
+          <span className="muted small">Saved by</span>
+          <Select size="sm" value={author} onChange={setAuthor} aria-label="Filter versions by author"
+            options={[{ value: "", label: "Anyone" }, ...authors.map(([k, name]) => ({ value: k, label: name }))]} />
+        </div>
+      )}
       <ul className="version-list">
-        {versions.map((v) => (
+        {shown.map((v) => (
           <li key={v.number} className={`${diff?.from === v.number ? "active" : ""} ${open === v.number ? "open" : ""}`}>
             <button className="version-row" onClick={() => setOpen(open === v.number ? null : v.number)} aria-expanded={open === v.number}>
               <b>v{v.number}</b>
@@ -82,7 +101,10 @@ export function VersionsPanel({ pid, role, versions, activity, branch, headVersi
                 </span>
               )}
             </button>
-            <div className="muted tiny">{v.author} · {ago(v.created_at)}</div>
+            <div className="muted tiny version-author">
+              <span className="avatar sm" aria-hidden style={{ background: authorColor(authorKey(v)) }}>{v.author[0]?.toUpperCase()}</span>
+              {v.author} · {ago(v.created_at)}
+            </div>
             {open === v.number && (
               <div className="version-actions">
                 <div className="row gap wrap">

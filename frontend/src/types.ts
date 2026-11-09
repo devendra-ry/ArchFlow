@@ -139,6 +139,8 @@ export interface ApiToken {
 export interface Branch { name: string; base_version: number | null; created_at: string }
 export interface Version {
   number: number; branch: string; message: string; author: string; parent: number | null; created_at: string;
+  /** The user who saved it (null for versions saved by the system or before authors were recorded). */
+  author_id?: string | null;
   review?: { status: ReviewStatus; approvals: number; required: number };
 }
 // ---- version approvals ----

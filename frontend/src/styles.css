@@ -1865,3 +1865,8 @@ table.tokens tbody tr:hover td, .trace-table tbody tr:hover td { background: col
   .gen-files button.on { border-bottom-color: var(--primary); }
   .gen-code { max-height: 55vh; }
 }
+
+/* versions: who saved each one */
+.version-author { display: flex; align-items: center; gap: 6px; }
+.version-author .avatar.sm { width: 16px; height: 16px; font-size: 9px; color: #fff; }
+.version-filter { align-items: center; margin: 0 0 6px; }

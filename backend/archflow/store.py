@@ -750,7 +750,7 @@ class Store:
 
     def list_versions(self, pid: str) -> list[dict[str, Any]]:
         with self._s() as s:
-            rows = s.execute(select(Version.number, Version.branch, Version.message, Version.author, Version.parent,
+            rows = s.execute(select(Version.number, Version.branch, Version.message, Version.author, Version.author_id, Version.parent,
                                     Version.created_at).where(Version.project_id == pid).order_by(Version.number.desc()))
             return [dict(r._mapping) for r in rows]
 
